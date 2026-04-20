@@ -1,10 +1,4 @@
 // API 클라이언트 테스트
-// REQ-P4-005: requestUrl 사용 의무
-// REQ-P4-006: 인증 실패 알림
-// REQ-P4-007: 네트워크 불가 시 재시도 큐
-// REQ-P6-007: 바이너리 파일 업로드
-// REQ-P6-008: 바이너리 파일 다운로드
-// REQ-P6-009: MIME 타입 매핑
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { RequestUrlParam, RequestUrlResponse } from '../mocks/obsidian';
 

@@ -1,5 +1,4 @@
 // 재시도 유틸리티
-// REQ-R5-005: 지수 백오프 재시도 로직
 import { FileNotFoundError } from '../errors';
 
 /** 기본 딜레이 (ms) */

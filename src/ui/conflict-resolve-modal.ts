@@ -1,5 +1,4 @@
 // @MX:NOTE 충돌 해결 모달 - diff 시각적 렌더링 및 사용자 선택 (SPEC-P5-3WAY-001)
-// SPEC-P6-UX-002: 심플 모드 확장 (REQ-UX-007)
 import { Modal, type App } from 'obsidian';
 
 // @MX:NOTE 사용자 선택 결과 타입

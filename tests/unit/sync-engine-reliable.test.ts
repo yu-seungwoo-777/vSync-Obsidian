@@ -1,7 +1,4 @@
 // SyncEngine 신뢰성 테스트
-// REQ-R5-002: _uploadLocalFile이 readIfExists 사용
-// REQ-R5-003: performInitialSync/performFullSync이 readIfExists 사용
-// REQ-R5-008: _downloadRemoteFile이 null 안전
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SyncEngine } from '../../src/sync-engine';
 import { FileNotFoundError, VaultReadError } from '../../src/errors';

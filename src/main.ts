@@ -1,10 +1,4 @@
 // Vector 플러그인 진입점
-// REQ-P4-017: 상태 표시줄 동기화 상태
-// REQ-P4-019: 수동 동기화 명령
-// REQ-P4-020: 동기화 상태 상세 보기
-// REQ-P3-014: 연결 모드 상태 표시 (SPEC-P3-REALTIME-001)
-// SPEC-P6-PERSIST-004: 오프라인 큐 영속화
-// SPEC-P6-UX-002: 충돌 해결 UX 흐름 개선
 
 import { Plugin, Notice } from 'obsidian';
 import { SyncEngine } from './sync-engine';

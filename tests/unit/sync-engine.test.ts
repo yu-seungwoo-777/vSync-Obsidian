@@ -1,8 +1,4 @@
 // 동기화 엔진 테스트
-// T-008: REQ-P4-008, 009, 013 - 로컬 변경 감지, 업로드, 삭제, .obsidian 제외
-// T-009: REQ-P4-010, 011, 018 - 폴링, 다운로드, 커서 업데이트
-// T-010: REQ-P4-012 - 초기 전체 동기화
-// REQ-P6-011 ~ REQ-P6-016: 바이너리 파일 동기화
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SyncEngine } from '../../src/sync-engine';
 import { WSClient } from '../../src/services/ws-client';

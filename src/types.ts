@@ -1,5 +1,4 @@
 // Vector 타입 정의
-// REQ-P4-001: 설정 영속화에 필요한 인터페이스
 //
 // API 응답 타입은 OpenAPI 명세에서 자동 생성됨 (docs/api/openapi.yaml)
 // 비-API 타입만 이 파일에 정의

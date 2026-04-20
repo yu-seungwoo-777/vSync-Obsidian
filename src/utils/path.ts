@@ -1,7 +1,4 @@
 // 경로 유틸리티
-// REQ-P4-013: .obsidian 디렉토리 동기화 방지
-// REQ-P6-001: 허용 확장자 기반 동기화 대상 판별
-// REQ-P6-002: 파일 타입 자동 분류
 
 /** 동기화 허용 확장자 집합 (소문자) */
 export const ALLOWED_EXTENSIONS = new Set([

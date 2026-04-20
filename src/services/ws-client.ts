@@ -1,7 +1,4 @@
 // WebSocket 클라이언트
-// REQ-P3-008: WS 연결, URL 변환, 메시지 처리
-// REQ-P3-009: 자동 재연결 (지수 백오프 + 지터)
-// REQ-P3-010: 클라이언트 하트비트 (30초 ping, 3회 누락 시 연결 종료)
 
 import type { WSMessage, WSSyncEventData, SyncEvent } from '../types';
 

@@ -1,7 +1,5 @@
 // SHA-256 해시 유틸리티
 // Web Crypto API의 crypto.subtle.digest 사용
-// REQ-P4-014: 충돌 감지를 위한 해시 비교
-// REQ-P6-010: ArrayBuffer 입력 지원
 
 // Obsidian 모바일/데스크톱 환경에서는 crypto가 전역으로 사용 가능하나,
 // Node.js 테스트 환경에서는 node:crypto에서 가져와야 함

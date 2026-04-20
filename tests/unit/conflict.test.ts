@@ -1,7 +1,4 @@
 // 충돌 감지/해결 테스트
-// REQ-P4-014: 충돌 감지 및 충돌 파일 생성
-// REQ-P4-015: 양쪽 버전 보존
-// REQ-P4-016: 무인 덮어쓰기 방지
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ConflictResolver } from '../../src/conflict';
 import { computeHash } from '../../src/utils/hash';

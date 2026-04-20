@@ -1,6 +1,5 @@
 // Vault mock 팩토리
 // SyncEngine 테스트에서 app.vault 동작을 시뮬레이션
-// REQ-P6-004 ~ REQ-P6-006: 바이너리 읽기/쓰기/존재확인 지원
 
 import { vi } from 'vitest';
 

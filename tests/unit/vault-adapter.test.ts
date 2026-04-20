@@ -1,8 +1,4 @@
 // VaultAdapter 신뢰성 테스트
-// REQ-R5-001: read()가 누락 파일에 대해 빈 문자열 대신 FileNotFoundError throw
-// REQ-R5-005: read/write에 재시도 로직 적용
-// REQ-R5-006: 경로 검증 적용
-// REQ-R5-007: 구조화된 에러 로깅
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FileNotFoundError, VaultReadError, VaultWriteError } from '../../src/errors';
 import { validateVaultPath } from '../../src/utils/path';

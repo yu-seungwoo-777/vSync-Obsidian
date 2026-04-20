@@ -1,6 +1,4 @@
 // SHA-256 해시 유틸리티 테스트
-// REQ-P4-014: 충돌 감지를 위한 해시 비교
-// REQ-P6-010: ArrayBuffer 해시 계산 지원
 import { describe, it, expect } from 'vitest';
 import { computeHash } from '../../../src/utils/hash';
 
@@ -65,7 +63,6 @@ console.log('hello');
 });
 
 // ============================================================
-// REQ-P6-010: ArrayBuffer 해시 계산
 // ============================================================
 
 describe('computeHash (ArrayBuffer)', () => {

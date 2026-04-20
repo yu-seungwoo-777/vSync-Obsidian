@@ -1,5 +1,4 @@
 // 재시도 유틸리티 테스트
-// REQ-R5-005: 지수 백오프 재시도 로직
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { withRetry } from '../../src/utils/retry';
 import { FileNotFoundError } from '../../src/errors';

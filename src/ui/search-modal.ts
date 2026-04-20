@@ -1,6 +1,4 @@
 // SearchModal - 서버 파일 검색 결과 표시 모달 (SPEC-P8-PLUGIN-API-001)
-// REQ-PA-013: 서버 파일 전문 검색 UI
-// REQ-PA-014: 검색 결과 클릭하여 파일 열기
 import { Modal, Notice, type App } from 'obsidian';
 import type { SearchResultItem } from '../types';
 

@@ -1,5 +1,4 @@
 // 경로 검증 테스트
-// REQ-R5-006: Vault 경로 보안 검증
 import { describe, it, expect } from 'vitest';
 import { validateVaultPath } from '../../src/utils/path';
 

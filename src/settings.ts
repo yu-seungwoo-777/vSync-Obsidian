@@ -1,8 +1,4 @@
 // Vector 설정 탭
-// REQ-P4-001: 설정 영속화 (loadData/saveData)
-// REQ-P4-002: 설정 저장 시 연결 검증
-// REQ-P4-003: 필수 설정 누락 시 동기화 비활성화
-// REQ-P4-004: 무효 설정 저장 방지
 
 import { PluginSettingTab, requestUrl, Notice, Setting } from 'obsidian';
 import type { VectorSettings, DeviceInfo } from './types';

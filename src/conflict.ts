@@ -1,9 +1,4 @@
 // 충돌 감지 및 해결
-// REQ-P4-014: 해시 비교로 충돌 감지
-// REQ-P4-015: 양쪽 버전 보존
-// REQ-P4-016: 무인 덮어쓰기 방지
-// SPEC-P5-3WAY-001: 3-way merge 충돌 해결 모달
-// SPEC-P6-UX-002: 충돌 큐 관리 (REQ-UX-003)
 
 import { computeHash } from './utils/hash';
 import { isConflictFile as checkIsConflictFile } from './utils/path';

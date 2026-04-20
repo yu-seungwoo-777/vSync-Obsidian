@@ -1,5 +1,4 @@
 // ConflictQueueView - 충돌 목록 사이드 패널 뷰 (SPEC-P6-UX-002)
-// REQ-UX-006: 충돌 해결 뷰
 import { ItemView, type WorkspaceLeaf } from 'obsidian';
 import type { ConflictQueue, ConflictQueueItem } from '../conflict';
 

@@ -1,5 +1,4 @@
 // SimpleConflictModal - diff 없는 심플 충돌 선택 모달 (SPEC-P6-UX-002)
-// REQ-UX-007: 충돌 해결 모달 개선 - 심플 모드
 import { Modal, type App } from 'obsidian';
 
 // @MX:NOTE 사용자 선택 결과 타입

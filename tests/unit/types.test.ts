@@ -1,5 +1,4 @@
 // 타입 정의 테스트
-// REQ-P6-017: 바이너리 오프라인 큐 항목 지원
 import { describe, it, expect } from 'vitest';
 import {
 	DEFAULT_SETTINGS,

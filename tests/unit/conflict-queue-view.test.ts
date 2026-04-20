@@ -1,7 +1,4 @@
 // ConflictQueueView 렌더링 테스트 (SPEC-P6-UX-002)
-// REQ-UX-006: 충돌 해결 뷰
-// REQ-UX-007: 충돌 해결 모달 개선
-// REQ-UX-005: 상태 표시줄 충돌 배지
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import '../mocks/obsidian';
 
@@ -89,7 +86,6 @@ describe('SimpleConflictModal (T-006)', () => {
 });
 
 // ============================================================
-// T-007: ConflictResolveModal 심플 모드 확장 (REQ-UX-007)
 // ============================================================
 
 describe('ConflictResolveModal simple mode (T-007)', () => {
@@ -144,7 +140,6 @@ describe('ConflictResolveModal simple mode (T-007)', () => {
 });
 
 // ============================================================
-// T-009: ConflictQueueView (REQ-UX-006)
 // ============================================================
 
 describe('ConflictQueueView (T-009)', () => {

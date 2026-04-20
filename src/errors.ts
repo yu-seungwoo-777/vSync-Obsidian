@@ -1,5 +1,4 @@
 // 커스텀 에러 타입
-// REQ-R5-004: Vault 작업 전용 에러 타입
 
 /** 파일을 찾을 수 없을 때 발생하는 에러 (AC-004.1) */
 export class FileNotFoundError extends Error {

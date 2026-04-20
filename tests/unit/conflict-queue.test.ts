@@ -1,5 +1,4 @@
 // ConflictQueue 단위 테스트 (SPEC-P6-UX-002)
-// REQ-UX-003: 충돌 큐 관리
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ConflictQueue } from '../../src/conflict';
 import type { ConflictQueueItem } from '../../src/conflict';
@@ -94,7 +93,6 @@ describe('ConflictResult type', () => {
 });
 
 // ============================================================
-// T-002: ConflictQueue 클래스 테스트
 // ============================================================
 
 describe('ConflictQueue', () => {

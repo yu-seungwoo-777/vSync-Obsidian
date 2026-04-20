@@ -1,5 +1,4 @@
 // 커스텀 에러 타입 테스트
-// REQ-R5-004: Vault 작업 전용 에러 타입
 import { describe, it, expect } from 'vitest';
 import {
 	FileNotFoundError,
@@ -8,7 +7,6 @@ import {
 } from '../../src/errors';
 
 // ============================================================
-// AC-004.1: FileNotFoundError
 // ============================================================
 describe('FileNotFoundError', () => {
 	it('Error를 상속해야 한다', () => {
@@ -41,7 +39,6 @@ describe('FileNotFoundError', () => {
 });
 
 // ============================================================
-// AC-004.2: VaultReadError
 // ============================================================
 describe('VaultReadError', () => {
 	it('Error를 상속해야 한다', () => {
@@ -80,7 +77,6 @@ describe('VaultReadError', () => {
 });
 
 // ============================================================
-// AC-004.3: VaultWriteError
 // ============================================================
 describe('VaultWriteError', () => {
 	it('Error를 상속해야 한다', () => {

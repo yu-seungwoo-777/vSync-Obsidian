@@ -1,13 +1,4 @@
 // 동기화 엔진 - 핵심 동기화 로직
-// REQ-P4-008: 로컬 파일 변경 감지 및 업로드
-// REQ-P4-009: 로컬 파일 삭제 반영
-// REQ-P4-010: 주기적 이벤트 폴링
-// REQ-P4-011: 원격 변경 파일 다운로드
-// REQ-P4-012: 초기 전체 동기화
-// REQ-P4-013: .obsidian 디렉토리 동기화 방지
-// REQ-P4-018: 동기화 성공 시 커서 업데이트
-// REQ-P3-013: 듀얼 모드 동기화 (실시간 + 폴링)
-// REQ-P6-011 ~ REQ-P6-016: 바이너리 파일 동기화
 
 import { VectorClient, MAX_BINARY_SIZE } from './api-client';
 import type { PersistCallback } from './api-client';

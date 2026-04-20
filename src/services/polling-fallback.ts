@@ -1,6 +1,4 @@
 // 폴링 폴백 컨트롤러
-// REQ-P3-011: WS 실패 시 자동 폴링 전환
-// REQ-P3-012: WS 복구 시 폴링 해제
 
 /**
  * @MX:NOTE PollingFallback: WS 연결 실패 시 폴링으로 대체

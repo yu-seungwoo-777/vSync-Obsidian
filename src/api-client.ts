@@ -1,10 +1,4 @@
 // Vector API 클라이언트
-// REQ-P4-005: Obsidian의 requestUrl() API 사용
-// REQ-P4-006: 인증 실패 알림
-// REQ-P4-007: 오프라인 재시도 큐
-// REQ-P6-007: 바이너리 파일 업로드 (Attachment API)
-// REQ-P6-008: 바이너리 파일 다운로드
-// REQ-P6-009: MIME 타입 매핑
 
 import { requestUrl } from 'obsidian';
 import type {
