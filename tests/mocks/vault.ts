@@ -1,8 +1,6 @@
 // Vault mock 팩토리
 // SyncEngine 테스트에서 app.vault 동작을 시뮬레이션
-
 import { vi } from 'vitest';
-
 // TAbstractFile, TFile, TFolder mock
 export interface MockTFile {
 	path: string;
@@ -12,7 +10,6 @@ export interface MockTFile {
 	vault: unknown;
 	parent: unknown;
 }
-
 export interface MockTFolder {
 	path: string;
 	name: string;
@@ -20,7 +17,6 @@ export interface MockTFolder {
 	vault: unknown;
 	parent: unknown;
 }
-
 // Mock TFile 생성 헬퍼
 export function createMockFile(path: string, content: string = ''): MockTFile {
 	return {
@@ -32,7 +28,6 @@ export function createMockFile(path: string, content: string = ''): MockTFile {
 		parent: null,
 	};
 }
-
 // Vault mock 팩토리
 // textMap: 텍스트 파일 맵, binaryMap: 바이너리 파일 맵
 export function createMockVault(
@@ -40,7 +35,6 @@ export function createMockVault(
 	binaryMap: Map<string, ArrayBuffer> = new Map()
 ) {
 	const eventHandlers: Record<string, Array<(...args: unknown[]) => void>> = {};
-
 	return {
 		// 텍스트 파일 읽기/쓰기
 		read: vi.fn().mockImplementation(async (pathOrFile: string | MockTFile) => {
@@ -78,7 +72,6 @@ export function createMockVault(
 				binaryMap.set(newPath, binary);
 			}
 		}),
-
 		// 바이너리 파일 읽기/쓰기 (REQ-P6-004 ~ REQ-P6-006)
 		readBinary: vi.fn().mockImplementation(async (pathOrFile: string | MockTFile) => {
 			const path = typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.path;
@@ -94,7 +87,6 @@ export function createMockVault(
 		writeBinary: vi.fn().mockImplementation(async (path: string, data: ArrayBuffer) => {
 			binaryMap.set(path, data);
 		}),
-
 		// 파일 목록 조회 (shouldSyncPath 필터 적용)
 		getFiles: vi.fn().mockImplementation(() => {
 			const allFiles: MockTFile[] = [];
@@ -112,7 +104,6 @@ export function createMockVault(
 			}
 			return null;
 		}),
-
 		// 이벤트 시스템
 		on: vi.fn().mockImplementation((event: string, handler: (...args: unknown[]) => void) => {
 			if (!eventHandlers[event]) {
@@ -122,7 +113,6 @@ export function createMockVault(
 			return { detach: vi.fn() };
 		}),
 		off: vi.fn(),
-
 		// 이벤트 발생 헬퍼 (테스트에서 사용)
 		trigger: vi.fn().mockImplementation((event: string, ...args: unknown[]) => {
 			const handlers = eventHandlers[event] || [];
@@ -130,18 +120,15 @@ export function createMockVault(
 				handler(...args);
 			}
 		}),
-
 		// 내부 상태 접근
 		_textMap: textMap,
 		_binaryMap: binaryMap,
 		_eventHandlers: eventHandlers,
 	};
 }
-
 // Plugin mock 팩토리
 export function createMockPlugin(settings: Record<string, unknown> = {}) {
 	const settingsStore = { ...settings };
-
 	return {
 		loadData: vi.fn().mockImplementation(async () => {
 			return Object.keys(settingsStore).length > 0 ? { ...settingsStore } : null;

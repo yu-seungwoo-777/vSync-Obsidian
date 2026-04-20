@@ -15,7 +15,6 @@ import type {
 	SyncState,
 	OfflineQueueItem,
 } from '../../src/types';
-
 describe('Type Definitions', () => {
 	describe('DEFAULT_SETTINGS', () => {
 		it('기본 설정값이 올바른 구조를 가져야 한다', () => {
@@ -27,7 +26,6 @@ describe('Type Definitions', () => {
 				device_id: '',
 			});
 		});
-
 		it('필수 필드가 모두 존재해야 한다', () => {
 			const keys = Object.keys(DEFAULT_SETTINGS);
 			expect(keys).toContain('server_url');
@@ -37,7 +35,6 @@ describe('Type Definitions', () => {
 			expect(keys).toContain('device_id');
 		});
 	});
-
 	describe('isVectorSettings (타입 가드)', () => {
 		it('유효한 설정 객체를 true로 판별해야 한다', () => {
 			const valid: VectorSettings = {
@@ -49,7 +46,6 @@ describe('Type Definitions', () => {
 			};
 			expect(isVectorSettings(valid)).toBe(true);
 		});
-
 		it('lastEventId가 포함된 설정도 true여야 한다', () => {
 			const withCursor: VectorSettings = {
 				server_url: 'https://example.com',
@@ -61,14 +57,12 @@ describe('Type Definitions', () => {
 			};
 			expect(isVectorSettings(withCursor)).toBe(true);
 		});
-
 		it('필수 필드가 누락되면 false를 반환해야 한다', () => {
 			expect(isVectorSettings({})).toBe(false);
 			expect(isVectorSettings({ server_url: 'test' })).toBe(false);
 			expect(isVectorSettings(null)).toBe(false);
 			expect(isVectorSettings(undefined)).toBe(false);
 		});
-
 		it('잘못된 타입의 필드가 있으면 false를 반환해야 한다', () => {
 			expect(
 				isVectorSettings({
@@ -81,7 +75,6 @@ describe('Type Definitions', () => {
 			).toBe(false);
 		});
 	});
-
 	describe('isFileInfo (타입 가드)', () => {
 		it('유효한 FileInfo 객체를 true로 판별해야 한다', () => {
 			const valid: FileInfo = {
@@ -94,14 +87,12 @@ describe('Type Definitions', () => {
 			};
 			expect(isFileInfo(valid)).toBe(true);
 		});
-
 		it('필수 필드가 누락되면 false를 반환해야 한다', () => {
 			expect(isFileInfo({})).toBe(false);
 			expect(isFileInfo({ id: 1, path: 'test.md' })).toBe(false);
 			expect(isFileInfo(null)).toBe(false);
 		});
 	});
-
 	describe('isSyncEvent (타입 가드)', () => {
 		it('유효한 SyncEvent 객체를 true로 판별해야 한다', () => {
 			const valid: SyncEvent = {
@@ -113,7 +104,6 @@ describe('Type Definitions', () => {
 			};
 			expect(isSyncEvent(valid)).toBe(true);
 		});
-
 		it('모든 이벤트 타입을 허용해야 한다', () => {
 			for (const type of ['created', 'updated', 'deleted']) {
 				const event = {
@@ -126,7 +116,6 @@ describe('Type Definitions', () => {
 				expect(isSyncEvent(event)).toBe(true);
 			}
 		});
-
 		it('잘못된 이벤트 타입은 false를 반환해야 한다', () => {
 			const invalid = {
 				id: '1',
@@ -138,11 +127,9 @@ describe('Type Definitions', () => {
 			expect(isSyncEvent(invalid)).toBe(false);
 		});
 	});
-
 	// ============================================================
 	// REQ-P6-017: 바이너리 오프라인 큐 항목
 	// ============================================================
-
 	describe('OfflineQueueItem (바이너리 지원)', () => {
 		it('content가 string인 항목을 생성할 수 있어야 한다', () => {
 			const item: OfflineQueueItem = {
@@ -154,7 +141,6 @@ describe('Type Definitions', () => {
 			};
 			expect(item.content).toBe('# Hello');
 		});
-
 		it('content가 ArrayBuffer인 항목을 생성할 수 있어야 한다', () => {
 			const binaryData = new Uint8Array([1, 2, 3, 4, 5]).buffer;
 			const item: OfflineQueueItem = {
@@ -167,11 +153,9 @@ describe('Type Definitions', () => {
 			expect(item.content).toBeInstanceOf(ArrayBuffer);
 		});
 	});
-
 	// ============================================================
 	// SPEC-P6-EVENT-007: SyncEvent sequence 필드 (REQ-EVT-003)
 	// ============================================================
-
 	describe('SyncEvent sequence (REQ-EVT-003)', () => {
 		it('SyncEvent에 sequence 필드를 포함할 수 있어야 한다', () => {
 			const event: SyncEvent = {
@@ -184,7 +168,6 @@ describe('Type Definitions', () => {
 			};
 			expect(event.sequence).toBe(42);
 		});
-
 		it('sequence 없는 SyncEvent도 유효해야 한다 (하위 호환)', () => {
 			const event: SyncEvent = {
 				id: '1',

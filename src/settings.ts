@@ -1,9 +1,7 @@
 // Vector 설정 탭
-
 import { PluginSettingTab, requestUrl, Notice, Setting } from 'obsidian';
 import type { VectorSettings, DeviceInfo } from './types';
 import { DEFAULT_SETTINGS } from './types';
-
 /** 설정 검증 결과 */
 export interface ValidationResult {
 	server_url: boolean;
@@ -11,14 +9,12 @@ export interface ValidationResult {
 	vault_id: boolean;
 	all: boolean;
 }
-
 /** 연결 테스트 결과 */
 export interface ConnectionTestResult {
 	success: boolean;
 	file_count?: number;
 	error?: string;
 }
-
 /** 디바이스 관리 API 인터페이스 (REQ-PA-011, REQ-PA-012) */
 export interface DeviceApi {
 	getDevices: () => Promise<DeviceInfo[]>;
@@ -26,11 +22,9 @@ export interface DeviceApi {
 	/** 현재 기기 device_id */
 	getCurrentDeviceId: () => string;
 }
-
 export class VectorSettingTab extends PluginSettingTab {
 	plugin: { settings: VectorSettings; saveSettings: () => Promise<void> };
 	private _deviceApi: DeviceApi | null = null;
-
 	constructor(
 		app: any, // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian PluginSettingTab 생성자가 App 타입 요구
 		plugin: { settings: VectorSettings; saveSettings: () => Promise<void> },
@@ -38,18 +32,14 @@ export class VectorSettingTab extends PluginSettingTab {
 		super(app, plugin as any); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian PluginSettingTab 생성자가 Plugin 타입 요구
 		this.plugin = plugin;
 	}
-
 	/** 디바이스 API 주입 (REQ-PA-011, REQ-PA-012) */
 	setDeviceApi(api: DeviceApi): void {
 		this._deviceApi = api;
 	}
-
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-
 		containerEl.createEl('h2', { text: 'Vector Settings' });
-
 		// 서버 URL
 		new Setting(containerEl)
 			.setName('Server URL')
@@ -63,7 +53,6 @@ export class VectorSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
-
 		// API Key
 		new Setting(containerEl)
 			.setName('API Key')
@@ -78,7 +67,6 @@ export class VectorSettingTab extends PluginSettingTab {
 					});
 				text.inputEl.type = 'password';
 			});
-
 		// Vault ID
 		new Setting(containerEl)
 			.setName('Vault ID')
@@ -92,7 +80,6 @@ export class VectorSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}),
 			);
-
 		// 동기화 주기
 		new Setting(containerEl)
 			.setName('Sync interval')
@@ -109,7 +96,6 @@ export class VectorSettingTab extends PluginSettingTab {
 						}
 					}),
 			);
-
 		// 연결 테스트
 		new Setting(containerEl)
 			.setName('Test Connection')
@@ -124,7 +110,6 @@ export class VectorSettingTab extends PluginSettingTab {
 					}
 				}),
 			);
-
 		// Device ID (편집 + 랜덤 생성)
 		new Setting(containerEl)
 			.setName('Device ID')
@@ -146,11 +131,9 @@ export class VectorSettingTab extends PluginSettingTab {
 					new Notice(`New Device ID: ${this.plugin.settings.device_id.slice(0, 8)}...`);
 				}),
 			);
-
 		// 연결된 기기 관리 (REQ-PA-011, REQ-PA-012)
 		this._renderDeviceSection(containerEl);
 	}
-
 	/**
 	 * 연결된 기기 섹션 렌더링 (REQ-PA-011, REQ-PA-012)
 	 * 서버에서 기기 목록을 가져와 표시하고, 현재 기기가 아닌 경우 제거 버튼 제공
@@ -158,7 +141,6 @@ export class VectorSettingTab extends PluginSettingTab {
 	private async _renderDeviceSection(containerEl: HTMLElement): Promise<void> {
 		// 섹션 헤더
 		containerEl.createEl('h3', { text: 'Connected Devices' });
-
 		// API가 설정되지 않은 경우 안내 메시지
 		if (!this._deviceApi) {
 			const noApiEl = containerEl.createDiv({
@@ -168,18 +150,15 @@ export class VectorSettingTab extends PluginSettingTab {
 			noApiEl.style.padding = '8px 0';
 			return;
 		}
-
 		// 로딩 상태 표시 영역
 		const loadingEl = containerEl.createDiv({
 			text: '기기 목록을 불러오는 중...',
 		});
 		loadingEl.style.color = 'var(--text-muted)';
 		loadingEl.style.padding = '8px 0';
-
 		try {
 			const devices = await this._deviceApi.getDevices();
 			loadingEl.remove();
-
 			// 기기가 없는 경우
 			if (devices.length === 0) {
 				const emptyEl = containerEl.createDiv({
@@ -189,10 +168,8 @@ export class VectorSettingTab extends PluginSettingTab {
 				emptyEl.style.padding = '8px 0';
 				return;
 			}
-
 			// 현재 기기 ID
 			const currentDeviceId = this._deviceApi.getCurrentDeviceId();
-
 			// 각 기기 표시
 			for (const device of devices) {
 				this._renderDeviceItem(containerEl, device, currentDeviceId);
@@ -206,7 +183,6 @@ export class VectorSettingTab extends PluginSettingTab {
 			errorEl.style.padding = '8px 0';
 		}
 	}
-
 	/**
 	 * 개별 기기 항목 렌더링 (REQ-PA-011, REQ-PA-012)
 	 */
@@ -216,19 +192,15 @@ export class VectorSettingTab extends PluginSettingTab {
 		currentDeviceId: string,
 	): void {
 		const isCurrent = device.device_id === currentDeviceId;
-
 		// 기기 ID 마스킹 (앞 8자리만 표시)
 		const maskedId = device.device_id.slice(0, 8) + '...';
-
 		// 마지막 동기화 시간 포맷팅
 		const lastSyncText = device.last_sync_at
 			? new Date(device.last_sync_at).toLocaleString()
 			: '없음';
-
 		const setting = new Setting(containerEl)
 			.setName(`${maskedId}${isCurrent ? ' (현재 기기)' : ''}`)
 			.setDesc(`마지막 동기화: ${lastSyncText}`);
-
 		// 현재 기기가 아닌 경우 제거 버튼 추가 (REQ-PA-012)
 		if (!isCurrent) {
 			setting.addButton((btn) =>
@@ -251,7 +223,6 @@ export class VectorSettingTab extends PluginSettingTab {
 			setting.setDesc(`마지막 동기화: ${lastSyncText} (현재 기기는 제거할 수 없습니다)`);
 		}
 	}
-
 	/**
 	 * 설정값 검증 (REQ-P4-004)
 	 */
@@ -259,7 +230,6 @@ export class VectorSettingTab extends PluginSettingTab {
 		const hasServerUrl = settings.server_url.trim().length > 0;
 		const hasApiKey = settings.api_key.trim().length > 0;
 		const hasVaultId = settings.vault_id.trim().length > 0;
-
 		return {
 			server_url: hasServerUrl,
 			api_key: hasApiKey,
@@ -267,28 +237,24 @@ export class VectorSettingTab extends PluginSettingTab {
 			all: hasServerUrl && hasApiKey && hasVaultId,
 		};
 	}
-
 	/**
 	 * 서버 URL 정규화 (trailing slash 제거)
 	 */
 	normalizeServerUrl(url: string): string {
 		return url.replace(/\/+$/, '');
 	}
-
 	/**
 	 * 필수 설정이 모두 구성되었는지 확인 (REQ-P4-003)
 	 */
 	isConfigured(settings: VectorSettings): boolean {
 		return this.validateSettings(settings).all;
 	}
-
 	/**
 	 * 서버 연결 테스트 (REQ-P4-002)
 	 */
 	async testConnection(settings: VectorSettings): Promise<ConnectionTestResult> {
 		const baseUrl = this.normalizeServerUrl(settings.server_url);
 		const url = `${baseUrl}/v1/vault/${settings.vault_id}/files`;
-
 		try {
 			const response = await requestUrl({
 				url,
@@ -323,6 +289,5 @@ export class VectorSettingTab extends PluginSettingTab {
 		}
 	}
 }
-
 export { DEFAULT_SETTINGS };
 export type { VectorSettings };
