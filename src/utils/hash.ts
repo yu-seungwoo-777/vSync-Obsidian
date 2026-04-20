@@ -1,9 +1,11 @@
 // SHA-256 해시 유틸리티
 // Web Crypto API의 crypto.subtle.digest 사용
+
 // Obsidian 모바일/데스크톱 환경에서는 crypto가 전역으로 사용 가능하나,
 // Node.js 테스트 환경에서는 node:crypto에서 가져와야 함
  
 type CryptoDigest = { subtle: { digest: (algo: string, data: Uint8Array) => Promise<ArrayBuffer> } };
+
 function getCrypto(): CryptoDigest {
 	// 글로벌 crypto (브라우저/Obsidian 환경)
 	if (typeof globalThis.crypto !== 'undefined' && globalThis.crypto.subtle) {
@@ -26,6 +28,7 @@ function getCrypto(): CryptoDigest {
 		throw new Error('crypto.subtle is not available in this environment');
 	}
 }
+
 /** ArrayBuffer를 hex 문자열로 변환 */
 function bufferToHex(hashBuffer: ArrayBuffer): string {
 	const hashArray = new Uint8Array(hashBuffer);
@@ -33,9 +36,11 @@ function bufferToHex(hashBuffer: ArrayBuffer): string {
 		.map((byte) => byte.toString(16).padStart(2, '0'))
 		.join('');
 }
+
 /** 문자열 또는 ArrayBuffer의 SHA-256 해시를 hex 문자열로 반환 */
 export async function computeHash(content: string | ArrayBuffer): Promise<string> {
 	let data: Uint8Array;
+
 	if (typeof content === 'string') {
 		// 텍스트를 UTF-8 바이트 배열로 변환
 		const encoder = new TextEncoder();
@@ -44,8 +49,10 @@ export async function computeHash(content: string | ArrayBuffer): Promise<string
 		// ArrayBuffer를 직접 사용
 		data = new Uint8Array(content);
 	}
+
 	// Web Crypto API로 SHA-256 해시 계산
 	const crypto = getCrypto();
 	const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+
 	return bufferToHex(hashBuffer);
 }

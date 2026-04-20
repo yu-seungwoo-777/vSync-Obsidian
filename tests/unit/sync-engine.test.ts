@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS } from '../../src/types';
 import { createMockVault, createMockFile } from '../mocks/vault';
 import { computeHash } from '../../src/utils/hash';
 import type { MockTFile } from '../mocks/vault';
+
 // API 클라이언트 mock
 const mockApiClient = {
 	rawUpload: vi.fn(),
@@ -33,20 +34,24 @@ const mockApiClient = {
 	resolveConflict: vi.fn(),
 	mergeResolve: vi.fn(),
 };
+
 vi.mock('../../src/api-client', () => ({
 	VectorClient: vi.fn().mockImplementation(() => mockApiClient),
 		MAX_BINARY_SIZE: 52_428_800,
 }));
+
 // 해시 유틸리티 mock
 vi.mock('../../src/utils/hash', () => ({
 	computeHash: vi.fn().mockResolvedValue('mock-hash'),
 }));
+
 const mockNotice = vi.fn();
 vi.mock('obsidian', () => ({
 	requestUrl: vi.fn(),
 	Notice: vi.fn().mockImplementation((msg: string) => mockNotice(msg)),
 	Platform: { isDesktop: true, isMobile: false },
 }));
+
 // WS 클라이언트 mock
 vi.mock('../../src/services/ws-client', () => ({
 	WSClient: vi.fn().mockImplementation(() => ({
@@ -59,12 +64,15 @@ vi.mock('../../src/services/ws-client', () => ({
 	})),
 	calculateReconnectDelay: vi.fn().mockReturnValue(1000),
 }));
+
 describe('SyncEngine', () => {
 	let engine: SyncEngine;
 	let vault: ReturnType<typeof createMockVault>;
 	let settings: VectorSettings;
+
 	beforeEach(() => {
 		vi.clearAllMocks();
+
 		settings = {
 			...DEFAULT_SETTINGS,
 			server_url: 'https://sync.example.com',
@@ -73,65 +81,89 @@ describe('SyncEngine', () => {
 			device_id: 'device-1',
 			sync_interval: 30,
 		};
+
 		vault = createMockVault();
 		engine = new SyncEngine(settings, vault as never, mockNotice);
 	});
+
 	// ============================================================
 	// T-008: Sync Engine Core (로컬 변경 감지)
 	// ============================================================
+
 	describe('로컬 파일 변경 감지 (REQ-P4-008)', () => {
 		it('파일 생성 시 업로드해야 한다', async () => {
 			vault._textMap.set('notes/test.md', 'content');
 			const file = createMockFile('notes/test.md', 'content');
 			mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/test.md', hash: 'h', sizeBytes: 7, version: 1 });
+
 			await engine.handleLocalCreate(file);
+
 			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'content');
 		});
+
 		it('파일 수정 시 업로드해야 한다', async () => {
 			vault._textMap.set('notes/test.md', 'modified content');
 			const file = createMockFile('notes/test.md', 'modified content');
 			mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/test.md', hash: 'h', sizeBytes: 16, version: 1 });
+
 			// handleLocalModify는 디바운스 적용 (SPEC-P6-DEDUP-003)
 			vi.useFakeTimers();
 			await engine.handleLocalModify(file);
 			await vi.advanceTimersByTimeAsync(500);
+
 			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'modified content');
 			vi.useRealTimers();
 		});
+
 		it('.obsidian/ 파일은 무시해야 한다 (REQ-P4-013)', async () => {
 			const file = createMockFile('.obsidian/config', 'config data');
+
 			await engine.handleLocalCreate(file);
 			await engine.handleLocalModify(file);
+
 			expect(mockApiClient.rawUpload).not.toHaveBeenCalled();
 		});
+
 		it('미지원 확장자 파일은 무시해야 한다', async () => {
 			const file = createMockFile('program.exe', 'binary');
+
 			await engine.handleLocalCreate(file);
+
 			expect(mockApiClient.rawUpload).not.toHaveBeenCalled();
 			expect(mockApiClient.uploadAttachment).not.toHaveBeenCalled();
 		});
+
 		it('동기화 중 발생한 이벤트는 무시해야 한다 (REQ-P4-008 동기화 루프 방지)', async () => {
 			const file = createMockFile('notes/test.md', 'content');
+
 			// 동기화 중 상태 시뮬레이션
 			engine.setSyncing(true);
 			await engine.handleLocalCreate(file);
+
 			expect(mockApiClient.rawUpload).not.toHaveBeenCalled();
 		});
 	});
+
 	describe('로컬 파일 삭제 반영 (REQ-P4-009)', () => {
 		it('파일 삭제 시 서버에 삭제 요청해야 한다', async () => {
 			mockApiClient.deleteFile.mockResolvedValueOnce(undefined);
+
 			await engine.handleLocalDelete('notes/old.md');
+
 			expect(mockApiClient.deleteFile).toHaveBeenCalledWith('notes/old.md');
 		});
+
 		it('.obsidian/ 파일 삭제는 무시해야 한다', async () => {
 			await engine.handleLocalDelete('.obsidian/config');
+
 			expect(mockApiClient.deleteFile).not.toHaveBeenCalled();
 		});
 	});
+
 	// ============================================================
 	// T-009: Sync Engine Polling (원격 변경 처리)
 	// ============================================================
+
 	describe('이벤트 폴링 (REQ-P4-010)', () => {
 		it('새 이벤트가 수신되면 파일을 다운로드해야 한다', async () => {
 			mockApiClient.getEvents.mockResolvedValueOnce([
@@ -139,34 +171,46 @@ describe('SyncEngine', () => {
 			]);
 			mockApiClient.rawDownload.mockResolvedValueOnce('# Remote content');
 			mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
 			// vault에 해당 파일이 없음 (단순 다운로드)
 			await engine.pollRemoteChanges();
+
 			expect(mockApiClient.getEvents).toHaveBeenCalled();
 			expect(mockApiClient.rawDownload).toHaveBeenCalledWith('notes/remote.md');
 		});
+
 		it('자기 자신의 디바이스 이벤트는 무시해야 한다', async () => {
 			mockApiClient.getEvents.mockResolvedValueOnce([
 				{ id: '10', event_type: 'created', file_path: 'notes/test.md', device_id: 'device-1', created_at: '2026-01-01' },
 			]);
+
 			await engine.pollRemoteChanges();
+
 			expect(mockApiClient.rawDownload).not.toHaveBeenCalled();
 		});
+
 		it('deleted 이벤트 시 로컬 파일을 삭제해야 한다', async () => {
 			vault._textMap.set('notes/deleted.md', 'old content');
 			mockApiClient.getEvents.mockResolvedValueOnce([
 				{ id: '10', event_type: 'deleted', file_path: 'notes/deleted.md', device_id: 'device-2', created_at: '2026-01-01' },
 			]);
 			mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
 			await engine.pollRemoteChanges();
+
 			expect(vault.delete).toHaveBeenCalled();
 		});
+
 		it('빈 이벤트 목록 시 추가 작업을 하지 않아야 한다', async () => {
 			mockApiClient.getEvents.mockResolvedValueOnce([]);
+
 			await engine.pollRemoteChanges();
+
 			expect(mockApiClient.rawDownload).not.toHaveBeenCalled();
 			expect(vault.delete).not.toHaveBeenCalled();
 		});
 	});
+
 	describe('커서 업데이트 (REQ-P4-018)', () => {
 		it('동기화 성공 후 커서를 업데이트해야 한다', async () => {
 			mockApiClient.getEvents.mockResolvedValueOnce([
@@ -175,14 +219,18 @@ describe('SyncEngine', () => {
 			]);
 			mockApiClient.rawDownload.mockResolvedValue('content');
 			mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
 			await engine.pollRemoteChanges();
+
 			// 마지막 이벤트 ID로 업데이트
 			expect(mockApiClient.updateSyncStatus).toHaveBeenCalledWith('11');
 		});
 	});
+
 	// ============================================================
 	// T-010: Sync Engine Initial Sync
 	// ============================================================
+
 	describe('초기 전체 동기화 (REQ-P4-012)', () => {
 		it('서버에만 있는 파일을 다운로드해야 한다', async () => {
 			// 서버: 3개 파일, 로컬: 0개 파일
@@ -193,9 +241,12 @@ describe('SyncEngine', () => {
 			]);
 			vault.getFiles.mockReturnValueOnce([]);
 			mockApiClient.rawDownload.mockResolvedValue('downloaded content');
+
 			await engine.performInitialSync();
+
 			expect(mockApiClient.rawDownload).toHaveBeenCalledTimes(3);
 		});
+
 		it('로컬에만 있는 파일을 업로드해야 한다', async () => {
 			// 서버: 0개 파일, 로컬: 2개 파일
 			mockApiClient.listFiles.mockResolvedValueOnce([]);
@@ -206,9 +257,12 @@ describe('SyncEngine', () => {
 				createMockFile('local2.md', 'content2'),
 			]);
 			mockApiClient.rawUpload.mockResolvedValue({ id: 1, path: '', hash: '', sizeBytes: 0, version: 1 });
+
 			await engine.performInitialSync();
+
 			expect(mockApiClient.rawUpload).toHaveBeenCalledTimes(2);
 		});
+
 		it('양쪽에 모두 있는 파일은 해시 비교 후 필요 시 다운로드해야 한다', async () => {
 			// 서버: a.md (hash: server-hash)
 			// 로컬: a.md (hash: local-hash, 다름)
@@ -219,10 +273,13 @@ describe('SyncEngine', () => {
 			vault.getFiles.mockReturnValueOnce([createMockFile('a.md', 'local content')]);
 			// computeHash mock이 'mock-hash'를 반환하므로 'server-hash'와 다름 → 충돌/다운로드
 			mockApiClient.rawDownload.mockResolvedValue('server content');
+
 			await engine.performInitialSync();
+
 			// 해시가 다르므로 다운로드 (또는 충돌 파일 생성)
 			expect(mockApiClient.rawDownload).toHaveBeenCalledWith('a.md');
 		});
+
 		it('.obsidian/ 파일은 초기 동기화에서 제외해야 한다', async () => {
 			vault._textMap.set('.obsidian/config', 'config');
 			vault._textMap.set('notes.md', 'notes');
@@ -231,7 +288,9 @@ describe('SyncEngine', () => {
 				createMockFile('notes.md', 'notes'),
 			]);
 			mockApiClient.listFiles.mockResolvedValueOnce([]);
+
 			await engine.performInitialSync();
+
 			// .obsidian 파일은 업로드되지 않아야 함
 			const uploadCalls = mockApiClient.rawUpload.mock.calls;
 			for (const call of uploadCalls) {
@@ -239,20 +298,25 @@ describe('SyncEngine', () => {
 			}
 		});
 	});
+
 	describe('start/stop', () => {
 		it('start 시 폴링 타이머를 시작해야 한다', () => {
 			const mockRegisterInterval = vi.fn();
 			engine.start(mockRegisterInterval);
+
 			expect(mockRegisterInterval).toHaveBeenCalled();
 		});
+
 		it('start 시 vault 이벤트 리스너를 등록해야 한다', () => {
 			const mockRegisterInterval = vi.fn();
 			engine.start(mockRegisterInterval);
+
 			expect(vault.on).toHaveBeenCalledWith('create', expect.any(Function));
 			expect(vault.on).toHaveBeenCalledWith('modify', expect.any(Function));
 			expect(vault.on).toHaveBeenCalledWith('delete', expect.any(Function));
 		});
 	});
+
 	describe('performFullSync (REQ-P4-019)', () => {
 		it('전체 동기화 순서: 업로드 → 이벤트 폴링 → 커서 업데이트', async () => {
 			vault._textMap.set('test.md', 'content');
@@ -263,16 +327,20 @@ describe('SyncEngine', () => {
 			]);
 			mockApiClient.rawDownload.mockResolvedValue('remote content');
 			mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
 			await engine.performFullSync();
+
 			// 업로드 먼저, 그 다음 이벤트 폴링, 그 다음 커서 업데이트
 			expect(mockApiClient.rawUpload).toHaveBeenCalled();
 			expect(mockApiClient.getEvents).toHaveBeenCalled();
 			expect(mockApiClient.updateSyncStatus).toHaveBeenCalled();
 		});
 	});
+
 	// ============================================================
 	// REQ-P6-011 ~ REQ-P6-016: 바이너리 파일 동기화
 	// ============================================================
+
 	describe('바이너리 로컬 파일 업로드 (REQ-P6-011)', () => {
 		it('바이너리 파일 생성 시 readBinary → uploadAttachment 경로를 사용해야 한다', async () => {
 			const binaryData = new Uint8Array([1, 2, 3, 4, 5]).buffer;
@@ -281,11 +349,14 @@ describe('SyncEngine', () => {
 			mockApiClient.uploadAttachment.mockResolvedValueOnce({
 				id: 1, path: 'images/photo.png', hash: 'binhash', sizeBytes: 5, version: 1,
 			});
+
 			await engine.handleLocalCreate(file);
+
 			expect(vault.readBinary).toHaveBeenCalledWith('images/photo.png');
 			expect(mockApiClient.uploadAttachment).toHaveBeenCalledWith('images/photo.png', binaryData);
 			expect(mockApiClient.rawUpload).not.toHaveBeenCalled();
 		});
+
 		it('50MB 초과 바이너리 파일은 업로드하지 않고 Notice를 표시해야 한다', async () => {
 			// 50MB + 1바이트
 			const oversized = new ArrayBuffer(52_428_801);
@@ -294,10 +365,13 @@ describe('SyncEngine', () => {
 			mockApiClient.uploadAttachment.mockResolvedValueOnce({
 				id: 1, path: 'large/video.mp4', hash: 'h', sizeBytes: 0, version: 1,
 			});
+
 			await engine.handleLocalCreate(file);
+
 			expect(mockApiClient.uploadAttachment).not.toHaveBeenCalled();
 			expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('50MB'));
 		});
+
 		it('바이너리 파일 수정 시에도 uploadAttachment를 사용해야 한다', async () => {
 			const binaryData = new Uint8Array([10, 20, 30]).buffer;
 			vault._binaryMap.set('images/photo.png', binaryData);
@@ -305,15 +379,18 @@ describe('SyncEngine', () => {
 			mockApiClient.uploadAttachment.mockResolvedValueOnce({
 				id: 1, path: 'images/photo.png', hash: 'h', sizeBytes: 3, version: 1,
 			});
+
 			// handleLocalModify는 디바운스 적용 (SPEC-P6-DEDUP-003)
 			vi.useFakeTimers();
 			await engine.handleLocalModify(file);
 			await vi.advanceTimersByTimeAsync(500);
+
 			expect(vault.readBinary).toHaveBeenCalledWith('images/photo.png');
 			expect(mockApiClient.uploadAttachment).toHaveBeenCalledWith('images/photo.png', binaryData);
 			vi.useRealTimers();
 		});
 	});
+
 	describe('바이너리 원격 다운로드 (REQ-P6-012)', () => {
 		it('바이너리 파일 다운로드 시 downloadAttachment → writeBinary 경로를 사용해야 한다', async () => {
 			const remoteData = new Uint8Array([100, 200, 150]).buffer;
@@ -322,48 +399,62 @@ describe('SyncEngine', () => {
 			]);
 			mockApiClient.downloadAttachment.mockResolvedValueOnce(remoteData);
 			mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
 			await engine.pollRemoteChanges();
+
 			expect(mockApiClient.downloadAttachment).toHaveBeenCalledWith('images/remote.png');
 			expect(vault.writeBinary).toHaveBeenCalledWith('images/remote.png', remoteData);
 		});
 	});
+
 	describe('바이너리 충돌 해결 (REQ-P6-015, REQ-P6-016)', () => {
 		it('바이너리 충돌 시 latest-wins 정책으로 서버 버전을 덮어쓰고 Notice를 표시해야 한다', async () => {
 			const localData = new Uint8Array([1, 2, 3]).buffer;
 			const serverData = new Uint8Array([4, 5, 6]).buffer;
 			vault._binaryMap.set('images/conflict.png', localData);
+
 			mockApiClient.getEvents.mockResolvedValueOnce([
 				{ id: '10', event_type: 'updated', file_path: 'images/conflict.png', device_id: 'device-2', created_at: '2026-01-01' },
 			]);
 			mockApiClient.downloadAttachment.mockResolvedValueOnce(serverData);
 			mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
 			// 로컬 해시와 원격 해시가 다르면 충돌 감지
 			vi.mocked(computeHash)
 				.mockResolvedValueOnce('local-hash')
 				.mockResolvedValueOnce('remote-hash');
+
 			await engine.pollRemoteChanges();
+
 			// 서버 버전으로 덮어쓰기 확인
 			expect(vault.writeBinary).toHaveBeenCalledWith('images/conflict.png', serverData);
 			// latest-wins Notice 표시
 			expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('latest-wins'));
 		});
 	});
+
 	describe('바이너리 파일 삭제 (REQ-P6-014)', () => {
 		it('바이너리 파일 삭제 시 동일한 DELETE API를 호출해야 한다', async () => {
 			mockApiClient.deleteFile.mockResolvedValueOnce(undefined);
+
 			await engine.handleLocalDelete('images/old-photo.png');
+
 			expect(mockApiClient.deleteFile).toHaveBeenCalledWith('images/old-photo.png');
 		});
+
 		it('원격 바이너리 삭제 이벤트 시 로컬 파일을 삭제해야 한다', async () => {
 			vault._binaryMap.set('images/to-delete.png', new Uint8Array([1]).buffer);
 			mockApiClient.getEvents.mockResolvedValueOnce([
 				{ id: '10', event_type: 'deleted', file_path: 'images/to-delete.png', device_id: 'device-2', created_at: '2026-01-01' },
 			]);
 			mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
 			await engine.pollRemoteChanges();
+
 			expect(vault.delete).toHaveBeenCalledWith('images/to-delete.png');
 		});
 	});
+
 	describe('바이너리 초기 동기화 (REQ-P6-013)', () => {
 		it('초기 동기화에 바이너리 파일이 포함되어야 한다', async () => {
 			// 서버: 바이너리 파일 1개
@@ -382,37 +473,47 @@ describe('SyncEngine', () => {
 			mockApiClient.uploadAttachment.mockResolvedValueOnce({
 				id: 2, path: 'images/local-only.png', hash: 'h', sizeBytes: 3, version: 1,
 			});
+
 			await engine.performInitialSync();
+
 			// 서버에만 있는 바이너리 → 다운로드
 			expect(mockApiClient.downloadAttachment).toHaveBeenCalledWith('images/server-only.png');
 			// 로컬에만 있는 바이너리 → 업로드
 			expect(mockApiClient.uploadAttachment).toHaveBeenCalledWith('images/local-only.png', localBinary);
 		});
 	});
+
 	describe('마크다운 회귀 테스트 (REQ-P6-015)', () => {
 		it('.md 파일은 여전히 Raw MD API를 사용해야 한다', async () => {
 			// 로컬 .md 업로드
 			vault._textMap.set('notes/test.md', '# Test');
 			const file = createMockFile('notes/test.md', '# Test');
 			mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/test.md', hash: 'h', sizeBytes: 6, version: 1 });
+
 			await engine.handleLocalCreate(file);
+
 			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', '# Test');
 			expect(mockApiClient.uploadAttachment).not.toHaveBeenCalled();
 		});
+
 		it('.md 파일 다운로드는 여전히 rawDownload를 사용해야 한다', async () => {
 			mockApiClient.getEvents.mockResolvedValueOnce([
 				{ id: '10', event_type: 'created', file_path: 'notes/remote.md', device_id: 'device-2', created_at: '2026-01-01' },
 			]);
 			mockApiClient.rawDownload.mockResolvedValueOnce('# Remote');
 			mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
 			await engine.pollRemoteChanges();
+
 			expect(mockApiClient.rawDownload).toHaveBeenCalledWith('notes/remote.md');
 			expect(mockApiClient.downloadAttachment).not.toHaveBeenCalled();
 		});
 	});
+
 	// ============================================================
 	// SPEC-P6-EVENT-007: WS 이벤트 멱등성 및 직렬 처리
 	// ============================================================
+
 	describe('이벤트 큐 직렬 처리 (REQ-EVT-001)', () => {
 		it('3개 이벤트를 큐에 넣으면 _processEvent가 순차적으로 3번 호출되어야 한다', async () => {
 			const callOrder: string[] = [];
@@ -426,11 +527,14 @@ describe('SyncEngine', () => {
 				return `content-${path}`;
 			});
 			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
 			await engine.pollRemoteChanges();
+
 			expect(callOrder).toEqual(['a.md', 'b.md', 'c.md']);
 			expect(mockApiClient.updateSyncStatus).toHaveBeenCalledWith('e3');
 		});
 	});
+
 	describe('이벤트 중복 제거 (REQ-EVT-002, REQ-EVT-004)', () => {
 		it('동일한 이벤트 ID를 두 번 처리해도 _processEvent는 한 번만 호출되어야 한다', async () => {
 			mockApiClient.getEvents.mockResolvedValueOnce([
@@ -438,17 +542,23 @@ describe('SyncEngine', () => {
 			]);
 			mockApiClient.rawDownload.mockResolvedValue('content');
 			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
 			await engine.pollRemoteChanges();
+
 			expect(mockApiClient.rawDownload).toHaveBeenCalledTimes(1);
+
 			// 두 번째 호출에서 같은 이벤트 ID가 다시 들어오면 무시
 			mockApiClient.getEvents.mockResolvedValueOnce([
 				{ id: 'dup-1', event_type: 'created', file_path: 'dup.md', device_id: 'device-2', created_at: '2026-01-01' },
 			]);
 			vi.clearAllMocks();
 			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
 			await engine.pollRemoteChanges();
+
 			expect(mockApiClient.rawDownload).not.toHaveBeenCalled();
 		});
+
 		it('중복 이벤트가 섞여 있어도 고유 이벤트만 처리해야 한다', async () => {
 			mockApiClient.getEvents.mockResolvedValueOnce([
 				{ id: 'a', event_type: 'created', file_path: 'a.md', device_id: 'device-2', created_at: '2026-01-01' },
@@ -457,10 +567,13 @@ describe('SyncEngine', () => {
 			]);
 			mockApiClient.rawDownload.mockResolvedValue('content');
 			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
 			await engine.pollRemoteChanges();
+
 			expect(mockApiClient.rawDownload).toHaveBeenCalledTimes(2);
 		});
 	});
+
 	describe('WS 콜백이 큐를 통해 라우팅 (REQ-EVT-001)', () => {
 		it('enableRealtimeMode의 syncEvent 콜백이 _enqueueEvent를 사용해야 한다', async () => {
 			// WSClient mock에서 on 콜백 캡처
@@ -476,15 +589,20 @@ describe('SyncEngine', () => {
 				buildWSUrl: vi.fn().mockReturnValue('ws://localhost/ws/sync/vault-1?apiKey=test-key'),
 			};
 			vi.mocked(WSClient).mockReturnValueOnce(mockWsClient as any);
+
 			engine.enableRealtimeMode();
+
 			// syncEvent 콜백이 등록되었는지 확인
 			expect(mockWsClient.on).toHaveBeenCalledWith('syncEvent', expect.any(Function));
+
 			// 콜백 실행 시 _processEvent가 아닌 큐를 통해 처리되는지 확인
 			const syncEventCallback = capturedCallbacks['syncEvent'];
 			expect(syncEventCallback).toBeDefined();
+
 			// 이벤트 전송
 			mockApiClient.rawDownload.mockResolvedValue('ws-content');
 			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
 			await syncEventCallback({
 				id: 'ws-evt-1',
 				event_type: 'created',
@@ -492,10 +610,12 @@ describe('SyncEngine', () => {
 				device_id: 'device-2',
 				created_at: '2026-01-01',
 			});
+
 			expect(mockApiClient.rawDownload).toHaveBeenCalledWith('ws-file.md');
 			expect(mockApiClient.updateSyncStatus).toHaveBeenCalledWith('ws-evt-1');
 		});
 	});
+
 	describe('폴링이 큐를 통해 라우팅 (REQ-EVT-001)', () => {
 		it('pollRemoteChanges가 이벤트를 _enqueueEvent로 처리해야 한다', async () => {
 			mockApiClient.getEvents.mockResolvedValueOnce([
@@ -503,11 +623,14 @@ describe('SyncEngine', () => {
 			]);
 			mockApiClient.rawDownload.mockResolvedValue('polled-content');
 			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
 			await engine.pollRemoteChanges();
+
 			expect(mockApiClient.rawDownload).toHaveBeenCalledWith('polled.md');
 			expect(mockApiClient.updateSyncStatus).toHaveBeenCalledWith('p1');
 		});
 	});
+
 	describe('performFullSync가 큐를 통해 라우팅 (REQ-EVT-001)', () => {
 		it('performFullSync의 이벤트 처리가 _enqueueEvent를 사용해야 한다', async () => {
 			vault._textMap.set('local.md', 'local-content');
@@ -518,14 +641,19 @@ describe('SyncEngine', () => {
 			]);
 			mockApiClient.rawDownload.mockResolvedValue('remote-content');
 			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
 			await engine.performFullSync();
+
 			expect(mockApiClient.rawDownload).toHaveBeenCalledWith('remote-fs.md');
 			expect(mockApiClient.updateSyncStatus).toHaveBeenCalledWith('fs1');
 		});
+
 	});
+
 		// ============================================================
 		// SPEC-P6-DEDUP-003: 해시 기반 업로드 중복 제거
 		// ============================================================
+
 		describe('해시 캐시 (SPEC-P6-DEDUP-003)', () => {
 			it('동일 해시면 업로드를 스킵해야 한다 (AC-002.2)', async () => {
 				vault._textMap.set('notes/test.md', 'content');
@@ -535,6 +663,7 @@ describe('SyncEngine', () => {
 				await (engine as any)._uploadLocalFile('notes/test.md');
 				expect(mockApiClient.rawUpload).not.toHaveBeenCalled();
 			});
+
 			it('다른 해시면 업로드해야 한다 (AC-002.3)', async () => {
 				vault._textMap.set('notes/test.md', 'new content');
 				const cache = (engine as any)._hash_cache as Map<string, string>;
@@ -544,6 +673,7 @@ describe('SyncEngine', () => {
 				await (engine as any)._uploadLocalFile('notes/test.md');
 				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'new content');
 			});
+
 			it('업로드 성공 시 서버 해시로 캐시를 업데이트해야 한다 (AC-003.1)', async () => {
 				vault._textMap.set('notes/test.md', 'content');
 				vi.mocked(computeHash).mockResolvedValueOnce('client-hash');
@@ -552,6 +682,7 @@ describe('SyncEngine', () => {
 				const cache = (engine as any)._hash_cache as Map<string, string>;
 				expect(cache.get('notes/test.md')).toBe('server-hash-abc');
 			});
+
 			it('업로드 실패 시 캐시를 업데이트하지 않아야 한다 (AC-003.4)', async () => {
 				vault._textMap.set('notes/test.md', 'content');
 				const cache = (engine as any)._hash_cache as Map<string, string>;
@@ -561,6 +692,7 @@ describe('SyncEngine', () => {
 				await (engine as any)._uploadLocalFile('notes/test.md');
 				expect(cache.get('notes/test.md')).toBe('original-hash');
 			});
+
 			it('설정에서 해시 캐시를 복원해야 한다 (AC-006.2)', () => {
 				const s: VectorSettings = { ...settings, hash_cache: { 'a.md': 'ha', 'b.md': 'hb' } };
 				const e = new SyncEngine(s, vault as never, mockNotice);
@@ -568,10 +700,12 @@ describe('SyncEngine', () => {
 				expect(c.size).toBe(2);
 				expect(c.get('a.md')).toBe('ha');
 			});
+
 			it('hashCache 없는 설정으로 정상 시작 (AC-006.6)', () => {
 				const e = new SyncEngine(settings, vault as never, mockNotice);
 				expect(((e as any)._hash_cache as Map<string, string>).size).toBe(0);
 			});
+
 			it('설정 변경 시 캐시를 초기화해야 한다 (AC-007.1)', () => {
 				const cache = (engine as any)._hash_cache as Map<string, string>;
 				cache.set('test.md', 'hash');
@@ -580,6 +714,7 @@ describe('SyncEngine', () => {
 				const updatedCache = (engine as any)._hash_cache as Map<string, string>;
 				expect(updatedCache.size).toBe(0);
 			});
+
 			it('파일 삭제 시 캐시 엔트리를 제거해야 한다 (AC-007.3)', async () => {
 				const cache = (engine as any)._hash_cache as Map<string, string>;
 				cache.set('notes/old.md', 'old-hash');
@@ -587,6 +722,7 @@ describe('SyncEngine', () => {
 				await engine.handleLocalDelete('notes/old.md');
 				expect(cache.has('notes/old.md')).toBe(false);
 			});
+
 			it('원격 다운로드 후 캐시 엔트리를 제거해야 한다 (AC-007.4)', async () => {
 				const cache = (engine as any)._hash_cache as Map<string, string>;
 				cache.set('notes/remote.md', 'old-hash');
@@ -598,6 +734,7 @@ describe('SyncEngine', () => {
 				await engine.pollRemoteChanges();
 				expect(cache.has('notes/remote.md')).toBe(false);
 			});
+
 			it('캐시 업데이트 시 onCacheUpdate 콜백을 호출해야 한다 (AC-006.3)', async () => {
 				const cb = vi.fn();
 				engine.setOnCacheUpdate(cb);
@@ -608,6 +745,7 @@ describe('SyncEngine', () => {
 				expect(cb).toHaveBeenCalledWith(expect.any(Map));
 			});
 		});
+
 		describe('디바운스 (SPEC-P6-DEDUP-003 REQ-DP-008)', () => {
 			it('연속 modify 시 마지막만 처리 (AC-008.2, AC-008.3)', async () => {
 				vault._textMap.set('notes/test.md', 'content');
@@ -623,6 +761,7 @@ describe('SyncEngine', () => {
 				expect(mockApiClient.rawUpload).toHaveBeenCalledTimes(1);
 				vi.useRealTimers();
 			});
+
 			it('handleLocalCreate는 즉시 업로드 (AC-008.5)', async () => {
 				vault._textMap.set('notes/new.md', 'new content');
 				vi.mocked(computeHash).mockResolvedValueOnce('hash');
@@ -630,6 +769,7 @@ describe('SyncEngine', () => {
 				await engine.handleLocalCreate(createMockFile('notes/new.md', 'new content'));
 				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/new.md', 'new content');
 			});
+
 			it('destroy 시 타이머 정리 (AC-008.6)', async () => {
 				vault._textMap.set('notes/a.md', 'a');
 				vault._textMap.set('notes/b.md', 'b');
@@ -642,6 +782,7 @@ describe('SyncEngine', () => {
 				vi.useRealTimers();
 			});
 		});
+
 		describe('LRU 캐시 (SPEC-P6-DEDUP-003 REQ-DP-009)', () => {
 			it('동일 키 업데이트 시 맨 뒤로 이동 (AC-009.4)', () => {
 				(engine as any)._updateHashCache('a.md', 'hash-a');
@@ -652,6 +793,7 @@ describe('SyncEngine', () => {
 				expect(cache.get('a.md')).toBe('hash-a-v2');
 			});
 		});
+
 		describe('초기 동기화 캐시 (SPEC-P6-DEDUP-003 REQ-DP-004)', () => {
 			it('서버 파일 목록으로 캐시 초기화 (AC-004.1)', async () => {
 				mockApiClient.listFiles.mockResolvedValueOnce([
@@ -665,6 +807,7 @@ describe('SyncEngine', () => {
 				expect(cache.get('a.md')).toBe('sha');
 				expect(cache.get('b.md')).toBe('shb');
 			});
+
 			it('로컬에만 있는 파일은 업로드 후 캐시 업데이트 (AC-004.2)', async () => {
 				mockApiClient.listFiles.mockResolvedValueOnce([]);
 				vault._textMap.set('local.md', 'content');
@@ -675,6 +818,7 @@ describe('SyncEngine', () => {
 				expect(cache.get('local.md')).toBe('uh');
 			});
 		});
+
 		describe('전체 동기화 캐시 재구축 (SPEC-P6-DEDUP-003 REQ-DP-005)', () => {
 			it('performFullSync 시 캐시 비우고 재구축 (AC-005.1, AC-005.2)', async () => {
 				const cache = (engine as any)._hash_cache as Map<string, string>;
@@ -689,15 +833,18 @@ describe('SyncEngine', () => {
 				expect(cache.get('test.md')).toBe('nh');
 			});
 		});
+
 	// ============================================================
 	// SPEC-P6-PERSIST-004: 오프라인 큐 Flush 트리거
 	// ============================================================
+
 	describe('flushOfflineQueue (SPEC-P6-PERSIST-004)', () => {
 		it('flushOfflineQueue이 client.flushQueue를 호출해야 한다', async () => {
 			await engine.flushOfflineQueue();
 			expect(mockApiClient.flushQueue).toHaveBeenCalled();
 		});
 	});
+
 	describe('WS 재연결 시 flush 트리거 (REQ-P6-008)', () => {
 		it('WS connected 이벤트 시 flushOfflineQueue를 호출해야 한다', async () => {
 			const capturedCallbacks: Record<string, Function> = {};
@@ -712,16 +859,21 @@ describe('SyncEngine', () => {
 				buildWSUrl: vi.fn().mockReturnValue('ws://localhost/ws/sync/vault-1?apiKey=test-key'),
 			};
 			vi.mocked(WSClient).mockReturnValueOnce(mockWsClient as any);
+
 			engine.enableRealtimeMode();
+
 			const statusChangeCallback = capturedCallbacks['statusChange'];
 			expect(statusChangeCallback).toBeDefined();
+
 			mockApiClient.getEvents.mockResolvedValueOnce([]);
 			statusChangeCallback('connected', 'realtime');
+
 			// flushOfflineQueue가 호출되었는지 확인 (비동기)
 			await new Promise((resolve) => setTimeout(resolve, 10));
 			expect(mockApiClient.flushQueue).toHaveBeenCalled();
 		});
 	});
+
 	describe('performFullSync 시 큐 flush 우선 (REQ-P6-008)', () => {
 		it('performFullSync 시작 시 flushQueue를 먼저 호출해야 한다', async () => {
 			vault._textMap.set('test.md', 'content');
@@ -729,13 +881,17 @@ describe('SyncEngine', () => {
 			mockApiClient.rawUpload.mockResolvedValue({ id: 1, path: 'test.md', hash: 'h', sizeBytes: 0, version: 1 });
 			mockApiClient.getEvents.mockResolvedValueOnce([]);
 			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
 			await engine.performFullSync();
+
 			expect(mockApiClient.flushQueue).toHaveBeenCalled();
 		});
 	});
+
 		// ============================================================
 		// SPEC-P8-PLUGIN-API-001 Cycle 3: 배치 연산 (T-006, T-007, T-008)
 		// ============================================================
+
 		describe('배치 파일 업로드 (REQ-PA-001, T-006)', () => {
 			it('텍스트 파일 120개를 50개 단위 청크로 batchOperations를 호출해야 한다', async () => {
 				mockApiClient.listFiles.mockResolvedValueOnce([]);
@@ -746,16 +902,20 @@ describe('SyncEngine', () => {
 					localFiles.push(createMockFile(name, `content-${i}`));
 				}
 				vault.getFiles.mockReturnValueOnce(localFiles);
+
 				mockApiClient.batchOperations.mockResolvedValue({
 					results: localFiles.map((f) => ({ path: f.path, status: 200, hash: `hash-${f.path}` })),
 				});
+
 				await engine.performInitialSync();
+
 				expect(mockApiClient.batchOperations).toHaveBeenCalledTimes(3);
 				const calls = mockApiClient.batchOperations.mock.calls;
 				expect(calls[0][0]).toHaveLength(50);
 				expect(calls[1][0]).toHaveLength(50);
 				expect(calls[2][0]).toHaveLength(20);
 			});
+
 			it('바이너리 파일은 배치에서 제외하고 개별 업로드해야 한다', async () => {
 				mockApiClient.listFiles.mockResolvedValueOnce([]);
 				const textFile = createMockFile('notes/text.md', 'text content');
@@ -764,18 +924,22 @@ describe('SyncEngine', () => {
 				const binaryData = new Uint8Array([1, 2, 3]).buffer;
 				vault._binaryMap.set('images/photo.png', binaryData);
 				vault.getFiles.mockReturnValueOnce([textFile, binaryFile]);
+
 				mockApiClient.batchOperations.mockResolvedValue({
 					results: [{ path: 'notes/text.md', status: 200, hash: 'h1' }],
 				});
 				mockApiClient.uploadAttachment.mockResolvedValue({
 					id: 2, path: 'images/photo.png', hash: 'h2', sizeBytes: 3, version: 1,
 				});
+
 				await engine.performInitialSync();
+
 				expect(mockApiClient.batchOperations).toHaveBeenCalledTimes(1);
 				expect(mockApiClient.batchOperations.mock.calls[0][0]).toHaveLength(1);
 				expect(mockApiClient.batchOperations.mock.calls[0][0][0].type).toBe('create');
 				expect(mockApiClient.uploadAttachment).toHaveBeenCalledWith('images/photo.png', binaryData);
 			});
+
 			it('배치 실패 시 개별 업로드로 폴백해야 한다', async () => {
 				mockApiClient.listFiles.mockResolvedValueOnce([]);
 				const f1 = createMockFile('a.md', 'a');
@@ -783,14 +947,18 @@ describe('SyncEngine', () => {
 				vault._textMap.set('a.md', 'a');
 				vault._textMap.set('b.md', 'b');
 				vault.getFiles.mockReturnValueOnce([f1, f2]);
+
 				mockApiClient.batchOperations.mockRejectedValueOnce(new Error('Batch not supported'));
 				mockApiClient.rawUpload
 					.mockResolvedValueOnce({ id: 1, path: 'a.md', hash: 'ha', sizeBytes: 1, version: 1 })
 					.mockResolvedValueOnce({ id: 2, path: 'b.md', hash: 'hb', sizeBytes: 1, version: 1 });
+
 				await engine.performInitialSync();
+
 				expect(mockApiClient.rawUpload).toHaveBeenCalledTimes(2);
 			});
 		});
+
 		describe('배치 혼합 연산 (REQ-PA-002, T-007)', () => {
 			it('업로드와 삭제가 혼합된 배치를 전송해야 한다', async () => {
 				const uploadFiles = [
@@ -798,6 +966,7 @@ describe('SyncEngine', () => {
 					{ path: 'new2.md', content: 'c2', hash: 'h2' },
 				];
 				const deletePaths = ['old1.md', 'old2.md'];
+
 				mockApiClient.batchOperations.mockResolvedValueOnce({
 					results: [
 						{ path: 'new1.md', status: 200, hash: 'rh1' },
@@ -806,7 +975,9 @@ describe('SyncEngine', () => {
 						{ path: 'old2.md', status: 200 },
 					],
 				});
+
 				await (engine as any)._batchUploadFiles(uploadFiles, deletePaths);
+
 				expect(mockApiClient.batchOperations).toHaveBeenCalledTimes(1);
 				const ops = mockApiClient.batchOperations.mock.calls[0][0];
 				expect(ops).toHaveLength(4);
@@ -816,6 +987,7 @@ describe('SyncEngine', () => {
 				expect(deletes).toHaveLength(2);
 			});
 		});
+
 		describe('배치 부분 실패 (REQ-PA-003, T-008)', () => {
 			it('207 Multi-Status: 실패 항목은 오프라인 큐로, 성공은 캐시 업데이트', async () => {
 				const uploadFiles = [
@@ -823,6 +995,7 @@ describe('SyncEngine', () => {
 					{ path: 'ok2.md', content: 'c2', hash: 'h2' },
 					{ path: 'fail.md', content: 'c3', hash: 'h3' },
 				];
+
 				mockApiClient.batchOperations.mockResolvedValueOnce({
 					results: [
 						{ path: 'ok1.md', status: 200, hash: 'rh1' },
@@ -830,7 +1003,9 @@ describe('SyncEngine', () => {
 						{ path: 'fail.md', status: 500 },
 					],
 				});
+
 				await (engine as any)._batchUploadFiles(uploadFiles, []);
+
 				const cache = (engine as any)._hash_cache as Map<string, string>;
 				expect(cache.get('ok1.md')).toBe('rh1');
 				expect(cache.get('ok2.md')).toBe('rh2');
@@ -838,31 +1013,38 @@ describe('SyncEngine', () => {
 					expect.objectContaining({ file_path: 'fail.md', operation: 'upload' })
 				);
 			});
+
 			it('200 전체 성공: 모든 해시를 캐시에 업데이트해야 한다', async () => {
 				const uploadFiles = [
 					{ path: 'a.md', content: 'ca', hash: 'ha' },
 					{ path: 'b.md', content: 'cb', hash: 'hb' },
 				];
+
 				mockApiClient.batchOperations.mockResolvedValueOnce({
 					results: [
 						{ path: 'a.md', status: 200, hash: 'ra' },
 						{ path: 'b.md', status: 200, hash: 'rb' },
 					],
 				});
+
 				await (engine as any)._batchUploadFiles(uploadFiles, []);
+
 				const cache = (engine as any)._hash_cache as Map<string, string>;
 				expect(cache.get('a.md')).toBe('ra');
 				expect(cache.get('b.md')).toBe('rb');
 				expect(mockApiClient.enqueue).not.toHaveBeenCalled();
 			});
 		});
+
 		// ============================================================
 		// SPEC-P8-PLUGIN-API-001 Cycle 4: 파일 이동 감지 (T-009, T-010, T-011)
 		// ============================================================
+
 		describe('리네임 감지 (REQ-PA-004, T-009)', () => {
 			it('삭제+생성 500ms 이내 + 동일 해시 → POST /move 호출', async () => {
 				mockApiClient.moveFile.mockResolvedValueOnce({ success: true, from: 'old.md', to: 'new.md' });
 				vi.mocked(computeHash).mockResolvedValue('same-hash');
+
 				// 삭제 이벤트 발생 → renameDetector가 대기
 				vault._textMap.set('notes/old.md', 'same content');
 				await engine.handleLocalDelete('notes/old.md');
@@ -870,49 +1052,61 @@ describe('SyncEngine', () => {
 				vault._textMap.set('notes/new.md', 'same content');
 				const file = createMockFile('notes/new.md', 'same content');
 				await engine.handleLocalCreate(file);
+
 				expect(mockApiClient.moveFile).toHaveBeenCalledWith('notes/old.md', 'notes/new.md');
 				// move 성공 시 delete+create 대신 move 사용
 				expect(mockApiClient.rawUpload).not.toHaveBeenCalled();
 			});
+
 			it('해시가 다르면 리네임이 아닌 delete+create 처리', async () => {
 				mockApiClient.deleteFile.mockResolvedValueOnce(undefined);
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/new.md', hash: 'h', sizeBytes: 7, version: 1 });
+
 				// 다른 해시
 				vi.mocked(computeHash)
 					.mockResolvedValueOnce('old-hash')
 					.mockResolvedValueOnce('new-hash');
+
 				await engine.handleLocalDelete('notes/old.md');
 				vault._textMap.set('notes/new.md', 'different content');
 				await engine.handleLocalCreate(createMockFile('notes/new.md', 'different content'));
+
 				expect(mockApiClient.moveFile).not.toHaveBeenCalled();
 				expect(mockApiClient.deleteFile).toHaveBeenCalled();
 			});
+
 			it('500ms 초과 시 리네임이 아닌 delete+create 처리', async () => {
 				vi.useFakeTimers();
 				mockApiClient.deleteFile.mockResolvedValueOnce(undefined);
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/new.md', hash: 'h', sizeBytes: 7, version: 1 });
 				vi.mocked(computeHash).mockResolvedValue('same-hash');
+
 				await engine.handleLocalDelete('notes/old.md');
 				// 600ms 경과
 				await vi.advanceTimersByTimeAsync(600);
 				vault._textMap.set('notes/new.md', 'same content');
 				await engine.handleLocalCreate(createMockFile('notes/new.md', 'same content'));
+
 				expect(mockApiClient.moveFile).not.toHaveBeenCalled();
 				vi.useRealTimers();
 			});
+
 			it('서버 /move 404 → 기존 delete+create로 폴백', async () => {
 				mockApiClient.moveFile.mockRejectedValueOnce(new Error('Not found'));
 				mockApiClient.deleteFile.mockResolvedValueOnce(undefined);
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/new.md', hash: 'h', sizeBytes: 7, version: 1 });
 				vi.mocked(computeHash).mockResolvedValue('same-hash');
+
 				await engine.handleLocalDelete('notes/old.md');
 				vault._textMap.set('notes/new.md', 'same content');
 				await engine.handleLocalCreate(createMockFile('notes/new.md', 'same content'));
+
 				// move 실패 → delete+create 폴백
 				expect(mockApiClient.deleteFile).toHaveBeenCalled();
 				expect(mockApiClient.rawUpload).toHaveBeenCalled();
 			});
 		});
+
 		describe('moved 이벤트 처리 (REQ-PA-005, T-010)', () => {
 			it('moved 이벤트 시 로컬 파일을 새 경로로 이동', async () => {
 				vault._textMap.set('notes/old.md', 'content');
@@ -921,54 +1115,69 @@ describe('SyncEngine', () => {
 				]);
 				mockApiClient.rawDownload.mockResolvedValueOnce('content');
 				mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
 				await engine.pollRemoteChanges();
+
 				expect(vault.readIfExists).toHaveBeenCalledWith('notes/old.md');
 				expect(vault.write).toHaveBeenCalledWith('notes/new.md', 'content');
 				expect(vault.delete).toHaveBeenCalledWith('notes/old.md');
 			});
+
 			it('moved 이벤트: 대상 경로에 파일 존재 → 충돌 큐', async () => {
 				vault._textMap.set('notes/old.md', 'old content');
 				vault._textMap.set('notes/new.md', 'existing content');
 				const cq = new ConflictQueue();
 				(engine as any)._conflict_queue = cq;
+
 				mockApiClient.getEvents.mockResolvedValueOnce([
 					{ id: 'm2', event_type: 'moved', file_path: 'notes/new.md', device_id: 'device-2', created_at: '2026-01-01', from_path: 'notes/old.md' },
 				]);
 				mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
 				await engine.pollRemoteChanges();
+
 				expect(cq.size()).toBe(1);
 				expect(cq.peek()?.file_path).toBe('notes/new.md');
 			});
 		});
+
 		describe('이동 충돌 (REQ-PA-006, T-011)', () => {
 			it('POST /move 409 → 충돌 큐에 적재', async () => {
 				const cq = new ConflictQueue();
 				(engine as any)._conflict_queue = cq;
 				mockApiClient.moveFile.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status: 409 }));
 				vi.mocked(computeHash).mockResolvedValue('same-hash');
+
 				await engine.handleLocalDelete('notes/old.md');
 				vault._textMap.set('notes/new.md', 'same content');
 				await engine.handleLocalCreate(createMockFile('notes/new.md', 'same content'));
+
 				// 409 → graceful degradation (move 실패 후 delete+create)
 				expect(mockApiClient.deleteFile).toHaveBeenCalled();
 			});
 		});
+
 		// ============================================================
 		// SPEC-P8-PLUGIN-API-001 Cycle 5: 서버 충돌 해결 (T-012, T-015)
 		// ============================================================
+
 		describe('서버 충돌 동기화 (REQ-PA-007, T-012)', () => {
 			it('시작 시 서버 충돌 목록을 로컬 큐에 머지', async () => {
 				const cq = new ConflictQueue();
 				(engine as any)._conflict_queue = cq;
+
 				mockApiClient.getConflicts.mockResolvedValueOnce([
 					{ id: 'sc-1', original_path: 'notes/a.md', conflict_path: 'notes/a.sync-conflict.md', created_at: '2026-04-19T00:00:00Z' },
 					{ id: 'sc-2', original_path: 'notes/b.md', conflict_path: 'notes/b.sync-conflict.md', created_at: '2026-04-19T00:00:00Z' },
 				]);
+
 				await (engine as any).syncServerConflicts();
+
 				expect(cq.size()).toBe(2);
 				expect(cq.getAll()[0].file_path).toBe('notes/a.md');
 				expect(cq.getAll()[0].conflict_id).toBe('sc-1');
 			});
+
 			it('중복 충돌은 큐에 추가하지 않음', async () => {
 				const cq = new ConflictQueue();
 				(engine as any)._conflict_queue = cq;
@@ -984,20 +1193,27 @@ describe('SyncEngine', () => {
 					timestamp: Date.now(),
 					source: 'download',
 				});
+
 				mockApiClient.getConflicts.mockResolvedValueOnce([
 					{ id: 'sc-1', original_path: 'notes/a.md', conflict_path: 'notes/a.sync-conflict.md', created_at: '2026-04-19T00:00:00Z' },
 				]);
+
 				await (engine as any).syncServerConflicts();
+
 				expect(cq.size()).toBe(1);
 			});
+
 			it('getConflicts 실패 시 무시 (graceful degradation)', async () => {
 				const cq = new ConflictQueue();
 				(engine as any)._conflict_queue = cq;
 				mockApiClient.getConflicts.mockRejectedValueOnce(new Error('Network error'));
+
 				await (engine as any).syncServerConflicts();
+
 				expect(cq.size()).toBe(0);
 			});
 		});
+
 		describe('자동 병합 (REQ-PA-010, T-015)', () => {
 			it('can_auto_merge=true 시 충돌 큐 생략 후 자동 병합', async () => {
 				const cq = new ConflictQueue();
@@ -1005,56 +1221,76 @@ describe('SyncEngine', () => {
 				vi.mocked(computeHash).mockResolvedValueOnce('merged-hash');
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'auto.md', hash: 'merged-hash', sizeBytes: 10, version: 2 });
 				mockApiClient.mergeResolve.mockResolvedValueOnce(undefined);
+
 				const result = await (engine as any)._tryAutoMerge('auto.md', 'local content', 'server content', 'conflict-id-1');
+
 				expect(result).toBe(true);
 				expect(cq.size()).toBe(0);
 				expect(mockApiClient.rawUpload).toHaveBeenCalled();
 				expect(mockApiClient.mergeResolve).toHaveBeenCalledWith('conflict-id-1', 'local content', 'merged-hash');
 			});
+
 			it('자동 병합 실패 시 false 반환', async () => {
 				const cq = new ConflictQueue();
 				(engine as any)._conflict_queue = cq;
 				vi.mocked(computeHash).mockResolvedValueOnce('hash');
 				mockApiClient.rawUpload.mockRejectedValueOnce(new Error('Upload failed'));
+
 				const result = await (engine as any)._tryAutoMerge('fail.md', 'local', 'server', 'conflict-id-2');
+
 				expect(result).toBe(false);
 			});
 		});
+
+
 		// ============================================================
 		// SPEC-P8-PLUGIN-API-001 Cycle 6: 디바이스 관리 (T-016, T-017)
 		// ============================================================
+
 		describe('디바이스 목록 조회 (REQ-PA-011, T-016)', () => {
 			it('getDevices를 통해 디바이스 목록 반환', async () => {
 				mockApiClient.getDevices.mockResolvedValueOnce([
 					{ device_id: 'dev-1', lastSyncAt: '2026-01-01T00:00:00Z', isCurrent: true },
 					{ device_id: 'dev-2', lastSyncAt: '2026-01-02T00:00:00Z', isCurrent: false },
 				]);
+
 				const devices = await (engine as any).getDevices();
+
 				expect(devices).toHaveLength(2);
 				expect(devices[0].isCurrent).toBe(true);
 				expect(devices[1].isCurrent).toBe(false);
 			});
+
 			it('getDevices 실패 시 빈 배열 반환', async () => {
 				mockApiClient.getDevices.mockRejectedValueOnce(new Error('Network'));
+
 				const devices = await (engine as any).getDevices();
+
 				expect(devices).toEqual([]);
 			});
 		});
+
 		describe('디바이스 제거 (REQ-PA-012, T-017)', () => {
 			it('removeDevice를 호출하여 디바이스 제거', async () => {
 				mockApiClient.removeDevice.mockResolvedValueOnce(undefined);
+
 				await (engine as any).removeDevice('dev-2');
+
 				expect(mockApiClient.removeDevice).toHaveBeenCalledWith('dev-2');
 			});
+
 			it('현재 디바이스는 제거 불가', async () => {
 				await expect((engine as any).removeDevice(settings.device_id))
 					.rejects.toThrow('Cannot remove current device');
 				expect(mockApiClient.removeDevice).not.toHaveBeenCalled();
 			});
 		});
+
+
 		// ============================================================
 		// SPEC-P8-PLUGIN-API-001 Cycle 7: 검색 연동 (T-018, T-019)
 		// ============================================================
+
 		describe('서버 전문 검색 (REQ-PA-013, T-018)', () => {
 			it('searchFiles를 통해 검색 결과 반환', async () => {
 				mockApiClient.searchFiles.mockResolvedValueOnce({
@@ -1064,23 +1300,32 @@ describe('SyncEngine', () => {
 					],
 					total: 2,
 				});
+
 				const results = await (engine as any).searchFiles('hello');
+
 				expect(results.results).toHaveLength(2);
 				expect(results.total).toBe(2);
 				expect(mockApiClient.searchFiles).toHaveBeenCalledWith('hello', undefined);
 			});
+
 			it('검색 옵션 전달 (limit, folder)', async () => {
 				mockApiClient.searchFiles.mockResolvedValueOnce({ results: [], total: 0 });
+
 				await (engine as any).searchFiles('test', { limit: 10 });
+
 				expect(mockApiClient.searchFiles).toHaveBeenCalledWith('test', { limit: 10 });
 			});
+
 			it('검색 실패 시 빈 결과 반환', async () => {
 				mockApiClient.searchFiles.mockRejectedValueOnce(new Error('Network'));
+
 				const results = await (engine as any).searchFiles('fail');
+
 				expect(results.results).toEqual([]);
 				expect(results.total).toBe(0);
 			});
 		});
+
 		describe('검색 결과 표시 (REQ-PA-014, T-019)', () => {
 			it('검색 결과에 path, snippet, score 포함', async () => {
 				mockApiClient.searchFiles.mockResolvedValueOnce({
@@ -1089,15 +1334,20 @@ describe('SyncEngine', () => {
 					],
 					total: 1,
 				});
+
 				const results = await (engine as any).searchFiles('match');
+
 				expect(results.results[0].path).toBe('notes/doc.md');
 				expect(results.results[0].snippet).toContain('match');
 				expect(results.results[0].score).toBeGreaterThan(0);
 			});
 		});
+
+
 		// ============================================================
 		// SPEC-P8-PLUGIN-API-001 Cycle 8: API 최적화 (T-020, T-021)
 		// ============================================================
+
 		describe('페이지네이션 지원 (REQ-PA-018, T-020)', () => {
 			it('listFiles 페이지네이션: hasMore=true 시 다음 페이지 조회', async () => {
 				// 첫 번째 페이지
@@ -1115,32 +1365,42 @@ describe('SyncEngine', () => {
 					],
 					hasMore: false,
 				});
+
 				const result = await (engine as any).listFilesPaginated();
+
 				expect(result).toHaveLength(2);
 				expect(mockApiClient.listFiles).toHaveBeenCalledTimes(2);
 				expect(mockApiClient.listFiles).toHaveBeenNthCalledWith(2, { cursor: 'cursor-1' });
 			});
+
 			it('hasMore 없으면 전체 결과 사용 (하위 호환)', async () => {
 				mockApiClient.listFiles.mockResolvedValueOnce([
 					{ id: 1, path: 'a.md', hash: 'ha', sizeBytes: 10, createdAt: '2026-01-01', updatedAt: '2026-01-01' },
 				]);
+
 				const result = await (engine as any).listFilesPaginated();
+
 				expect(result).toHaveLength(1);
 				expect(mockApiClient.listFiles).toHaveBeenCalledTimes(1);
 			});
 		});
+
 		describe('타겟팅된 해시 조회 (REQ-PA-019, T-021)', () => {
 			it('로컬 파일 없으면 listFiles 호출 없이 다운로드', async () => {
 				// 로컬 파일 존재하지 않음 → 충돌 감지 불필요 → listFiles 생략
 				mockApiClient.rawDownload.mockResolvedValueOnce('remote content');
 				mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
 				const events = [
 					{ id: 'h1', event_type: 'updated', file_path: 'remote.md', device_id: 'dev-2', created_at: '2026-01-01' },
 				];
 				mockApiClient.getEvents.mockResolvedValueOnce(events);
+
 				await engine.pollRemoteChanges();
+
 				expect(mockApiClient.rawDownload).toHaveBeenCalledWith('remote.md');
 				expect(mockApiClient.listFiles).not.toHaveBeenCalled();
 			});
 		});
+
 	});

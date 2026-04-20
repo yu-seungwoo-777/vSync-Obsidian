@@ -1,7 +1,9 @@
 // Obsidian 모듈 전체 mock
 // vitest.config.ts alias로 obsidian → 이 파일을 가리킴
 // main.ts, apiClient.ts, settings.ts 등에서 `import { ... } from 'obsidian'`이 여기서 해석됨
+
 import { vi } from 'vitest';
+
 // globalThis.crypto 모킹 (테스트 환경에서 randomUUID 사용)
 if (!globalThis.crypto?.randomUUID) {
 	Object.defineProperty(globalThis, 'crypto', {
@@ -14,9 +16,11 @@ if (!globalThis.crypto?.randomUUID) {
 		writable: true,
 	});
 }
+
 // ============================================================
 // 타입 정의
 // ============================================================
+
 export interface RequestUrlParam {
 	url: string;
 	method?: string;
@@ -25,6 +29,7 @@ export interface RequestUrlParam {
 	contentType?: string;
 	throw?: boolean;
 }
+
 export interface RequestUrlResponse {
 	status: number;
 	headers: Record<string, string>;
@@ -32,9 +37,11 @@ export interface RequestUrlResponse {
 	json: Record<string, unknown>;
 	arrayBuffer: ArrayBuffer;
 }
+
 // ============================================================
 // 최상위 mock 내보내기
 // ============================================================
+
 // requestUrl - 각 테스트에서 vi.mocked로 오버라이드 가능
 export const requestUrl = vi.fn<[], Promise<RequestUrlResponse>>().mockImplementation(async () => ({
 	status: 200,
@@ -43,14 +50,18 @@ export const requestUrl = vi.fn<[], Promise<RequestUrlResponse>>().mockImplement
 	json: {} as Record<string, unknown>,
 	arrayBuffer: new ArrayBuffer(0),
 }));
+
 export const Notice = vi.fn().mockImplementation((text: string) => ({ _text: text }));
+
 export const Platform = {
 	isDesktop: true,
 	isMobile: false,
 };
+
 export const moment = vi.fn().mockReturnValue({
 	format: vi.fn().mockReturnValue('20260417120000'),
 });
+
 // Plugin 기본 클래스 mock
 export class Plugin {
 	loadData = vi.fn<[], Promise<unknown>>().mockResolvedValue(null);
@@ -85,6 +96,7 @@ export class Plugin {
 	};
 	manifest = { id: 'vector', name: 'Vector', version: '0.1.0' };
 }
+
 // Modal 기본 클래스 mock (SPEC-P5-3WAY-001)
 export class Modal {
 	containerEl: HTMLElement;
@@ -94,6 +106,7 @@ export class Modal {
 	modalEl: HTMLElement;
 	_opened = false;
 	_onClose?: () => void;
+
 	constructor(app: unknown) {
 		this.app = app;
 		const mockEl = {
@@ -119,12 +132,14 @@ export class Modal {
 	onOpen() {}
 	onClose() {}
 }
+
 // ItemView 기본 클래스 mock (SPEC-P6-UX-002)
 export class ItemView {
 	containerEl: HTMLElement;
 	app: unknown;
 	contentEl: HTMLElement;
 	leaf: unknown;
+
 	constructor(leaf: unknown) {
 		this.leaf = leaf;
 		const mockEl = {
@@ -167,6 +182,7 @@ export class ItemView {
 	getIcon() { return 'file'; }
 	getState() { return {}; }
 }
+
 // PluginSettingTab 기본 클래스 mock
 export class PluginSettingTab {
 	containerEl: Record<string, unknown>;
@@ -181,6 +197,7 @@ export class PluginSettingTab {
 	display() {}
 	hide() {}
 }
+
 // Setting 클래스 mock
 export class Setting {
 	settingEl: Record<string, unknown>;
@@ -188,6 +205,7 @@ export class Setting {
 	infoEl: Record<string, unknown>;
 	nameEl: Record<string, unknown>;
 	descEl: Record<string, unknown>;
+
 	constructor(_containerEl: unknown) {
 		this.settingEl = {};
 		this.controlEl = {};
@@ -195,6 +213,7 @@ export class Setting {
 		this.nameEl = {};
 		this.descEl = {};
 	}
+
 	setName() { return this; }
 	setDesc() { return this; }
 	setPlaceholder() { return this; }
@@ -220,6 +239,7 @@ export class Setting {
 	setHeading() { return this; }
 	setClass() { return this; }
 }
+
 // 헬퍼 함수
 export function createMockRequestUrl() {
 	return vi.fn().mockImplementation(async (): Promise<RequestUrlResponse> => ({
