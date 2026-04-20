@@ -1,0 +1,675 @@
+// Vector 플러그인 진입점
+// REQ-P4-017: 상태 표시줄 동기화 상태
+// REQ-P4-019: 수동 동기화 명령
+// REQ-P4-020: 동기화 상태 상세 보기
+// REQ-P3-014: 연결 모드 상태 표시 (SPEC-P3-REALTIME-001)
+// SPEC-P6-PERSIST-004: 오프라인 큐 영속화
+// SPEC-P6-UX-002: 충돌 해결 UX 흐름 개선
+
+import { Plugin, Notice } from 'obsidian';
+import { SyncEngine } from './sync-engine';
+import { VectorSettingTab } from './settings';
+import { DEFAULT_SETTINGS } from './types';
+import type { VectorSettings, OfflineQueueItem } from './types';
+import type { ConnectionMode } from './types';
+import type { VaultAdapter } from './sync-engine';
+import { ConflictQueue, ConflictResolver } from './conflict';
+import type { ConflictQueueItem } from './conflict';
+import { ConflictQueueView } from './ui/conflict-queue-view';
+import { SyncLogView } from './ui/sync-log-view';
+import { SearchInputModal, SearchModal } from './ui/search-modal';
+import { FileNotFoundError, VaultReadError, VaultWriteError } from './errors';
+import { validateVaultPath } from './utils/path';
+import { syncLogger } from './sync-logger';
+
+export default class VectorPlugin extends Plugin {
+	settings: VectorSettings = { ...DEFAULT_SETTINGS };
+	private _syncEngine: SyncEngine | null = null;
+	private _statusBarItem: { setText: (text: string) => void; setAttr: (attr: string, value: string) => void; _lastText?: string; hide?: () => void; show?: () => void } | null = null;
+
+	// @MX:NOTE 충돌 큐 (SPEC-P6-UX-002 REQ-UX-003)
+	conflictQueue: ConflictQueue;
+
+	async onload() {
+		// 설정 로드
+		const savedData = await this.loadData();
+		if (savedData) {
+			this.settings = { ...DEFAULT_SETTINGS, ...savedData as Partial<VectorSettings> };
+		}
+
+		// deviceId가 없으면 자동 생성
+		if (!this.settings.device_id) {
+			this.settings.device_id = globalThis.crypto.randomUUID();
+			await this.saveSettings();
+		}
+
+		// 상태 표시줄 생성
+		this._statusBarItem = this.addStatusBarItem() as unknown as typeof this._statusBarItem;
+		this._statusBarItem?.setText('Vector: loading...');
+
+		// Vault 어댑터 생성
+		const vaultAdapter = this._createVaultAdapter();
+
+		// @MX:NOTE 오프라인 큐 복원 (SPEC-P6-PERSIST-004 REQ-P6-002)
+		const rawQueue = this._parseQueueData(savedData);
+		const restoredQueue = this._cleanStaleEntries(rawQueue);
+
+		// @MX:NOTE 충돌 큐 생성 (SPEC-P6-UX-002 REQ-UX-003)
+		this.conflictQueue = new ConflictQueue();
+
+		// 동기화 엔진 생성 (persistCallback + conflictQueue 전달)
+		this._syncEngine = new SyncEngine(
+			this.settings,
+			vaultAdapter,
+			(msg: string) => {
+				syncLogger.info(msg);
+				this._copyableNotice(msg);
+			},
+			(items: OfflineQueueItem[]) => this._persistQueue(items),
+			restoredQueue,
+			this.conflictQueue,
+		);
+
+		// @MX:NOTE 연결 모드 상태 변경 콜백 설정 (SPEC-P3-REALTIME-001)
+		this._syncEngine.setOnStatusChange((status: string, mode: ConnectionMode) => {
+			if (status === 'idle' && mode === 'realtime') {
+				this.updateStatus('idle');
+			} else if (status === 'idle' && mode === 'polling') {
+				this.updateStatus('polling');
+			}
+		});
+
+		// @MX:NOTE 해시 캐시 업데이트 콜백 (SPEC-P6-DEDUP-003, AC-006.4)
+		this._syncEngine.setOnCacheUpdate((cache: Map<string, string>) => {
+			const entries: Record<string, string> = {};
+			let count = 0;
+			for (const [key, value] of cache) {
+				if (count >= 10000) break;
+				entries[key] = value;
+				count++;
+			}
+			this.settings.hash_cache = entries;
+			this.saveData(this.settings);
+		});
+
+		// @MX:NOTE 충돌 큐 업데이트 콜백 (SPEC-P6-UX-002 REQ-UX-005)
+		this.conflictQueue.onUpdate(() => this.updateConflictBadge());
+
+		// @MX:NOTE 충돌 해결 뷰 등록 (SPEC-P6-UX-002 REQ-UX-006)
+		this.registerView(ConflictQueueView.VIEW_TYPE, (leaf) => {
+			const view = new ConflictQueueView(leaf, this.conflictQueue);
+			view.setOnResolveItem((item) => this._openResolveModal(item));
+			view.setOnBulkResolve((items) => this._bulkResolveRemote(items));
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Obsidian registerView 콜백 반환 타입 제약
+				return view as any;
+		});
+
+		// 동기화 로그 뷰 등록
+		this.registerView(SyncLogView.VIEW_TYPE, (leaf) => {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Obsidian registerView 콜백 반환 타입 제약
+				return new SyncLogView(leaf) as any;
+		});
+
+		// 리본 아이콘으로 로그 뷰 열기
+		this.addRibbonIcon('scroll', 'Open sync log', () => {
+			this._activateLogView();
+		});
+
+		// 설정이 구성된 경우에만 자동 동기화 시작
+		if (this._isConfigured()) {
+			this._startSync();
+
+			// @MX:NOTE 큐에 복원된 항목이 있으면 flush 시도 (SPEC-P6-PERSIST-004 REQ-P6-002)
+			if (restoredQueue.length > 0) {
+				this._syncEngine.flushOfflineQueue();
+			}
+		} else {
+			this.updateStatus('not_configured');
+		}
+
+		// 명령 등록
+		this._registerCommands();
+
+		// 설정 탭 등록 + 디바이스 API 주입 (REQ-PA-011, REQ-PA-012)
+		const settingTab = new VectorSettingTab(this.app, this);
+		if (this._syncEngine) {
+			settingTab.setDeviceApi({
+				getDevices: () => this._syncEngine!.getDevices(),
+				removeDevice: (deviceId: string) => this._syncEngine!.removeDevice(deviceId),
+				getCurrentDeviceId: () => this.settings.device_id,
+			});
+		}
+		this.addSettingTab(settingTab);
+	}
+
+	/** 클릭하면 메시지가 복사되는 커스텀 토스트 */
+	private _copyableNotice(message: string): void {
+		new Notice(message, 5000);
+	}
+
+	/** 동기화 로그 뷰 열기 */
+	private async _activateLogView(): Promise<void> {
+		const leaves = this.app.workspace.getLeavesOfType(SyncLogView.VIEW_TYPE);
+		if (leaves.length > 0) {
+			(leaves[0] as any).setEphemeralState?.({ focus: true }); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian WorkspaceLeaf.setEphemeralState 미노출
+		} else {
+			const rightLeaf = (this.app.workspace as any).getRightLeaf?.(false); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian Workspace.getRightLeaf 미노출
+			if (rightLeaf) {
+				await rightLeaf.setViewState({
+					type: SyncLogView.VIEW_TYPE,
+					active: true,
+				});
+			}
+		}
+	}
+
+	onunload() {
+		// @MX:NOTE 플러그인 언로드 시 WS 연결 종료, 타이머 정리
+		if (this._syncEngine) {
+			this._syncEngine.destroy();
+			this._syncEngine = null;
+		}
+	}
+
+	/** 설정 저장 */
+	async saveSettings() {
+		await this.saveData(this.settings);
+		if (this._syncEngine) {
+			this._syncEngine.updateSettings(this.settings);
+		}
+	}
+
+	/** 상태 표시줄 아이템 반환 (테스트용) */
+	getStatusBarItem(): { _lastText: string } {
+		// _statusBarItem이 없으면 생성
+		if (!this._statusBarItem) {
+			this._statusBarItem = {
+				setText: () => {},
+				setAttr: () => {},
+				_lastText: '',
+			};
+		}
+		return this._statusBarItem as unknown as { _lastText: string };
+	}
+
+	/** 상태 업데이트 (REQ-P4-017 + REQ-P3-014) */
+	updateStatus(status: string, message?: string) {
+		const statusTexts: Record<string, string> = {
+			idle: 'Vector: Synced',
+			syncing: 'Vector: Syncing...',
+			polling: 'Vector: Synced (polling)',
+			connecting: 'Vector: Connecting...',
+			error: `Vector: Error: ${message || 'Unknown'}`,
+			not_configured: 'Vector: Not configured',
+		};
+
+		const text = statusTexts[status] || status;
+
+		// _statusBarItem이 없으면 지연 초기화
+		if (!this._statusBarItem) {
+			this.getStatusBarItem();
+		}
+
+		if (this._statusBarItem) {
+			this._statusBarItem.setText(text);
+			(this._statusBarItem as { _lastText?: string })._lastText = text;
+		}
+	}
+
+	// ============================================================
+	// SPEC-P6-UX-002: 충돌 해결 UX 메서드
+	// ============================================================
+
+	/** 충돌 배지 업데이트 (REQ-UX-005) */
+	updateConflictBadge(): void {
+		if (!this._statusBarItem) return;
+		const count = this.conflictQueue.size();
+
+		if (count > 0) {
+			const badgeText = `(!) ${count}`;
+			this._statusBarItem.setText(badgeText);
+			(this._statusBarItem as { _lastText?: string })._lastText = badgeText;
+		}
+		// count가 0이면 기본 상태 표시 유지 (배지 숨김은 상태 표시줄 텍스트로 처리)
+	}
+
+	/** 큐에서 항목 찾기 (공통 헬퍼) */
+	private _findQueueItem(itemId: string): ConflictQueueItem | undefined {
+		return this.conflictQueue.getAll().find((i: ConflictQueueItem) => i.id === itemId);
+	}
+
+	/** 충돌 해결: 로컬 유지 (AC-008.1) */
+	async applyLocal(itemId: string): Promise<void> {
+		const item = this._findQueueItem(itemId);
+		if (!item) return;
+
+		// @MX:NOTE 로컬 버전 유지 + 서버에 업로드 (AC-008.1)
+		if (this._syncEngine) {
+			try {
+				const vault = this._createVaultAdapter();
+				const content = await vault.readIfExists(item.file_path);
+				if (content !== null) {
+					(this._syncEngine as any)._uploadLocalFile(item.file_path); // eslint-disable-line @typescript-eslint/no-explicit-any -- SyncEngine private 메서드 접근
+				}
+			} catch (e) {
+				console.warn('Vector: Failed to apply local', e);
+			}
+
+			// @MX:NOTE 서버 충돌 해결 API (REQ-PA-008)
+			if (item.conflict_id) {
+				try {
+					await this._syncEngine.resolveConflict(item.conflict_id, 'reject');
+				} catch (e) {
+					console.warn('Vector: Failed to resolve conflict on server', e);
+				}
+			}
+		}
+
+		// 큐에서 제거 (AC-008.5) - onUpdate 콜백이 배지 업데이트
+		this.conflictQueue.resolve(itemId);
+	}
+
+	/** 충돌 해결: 원격 적용 (AC-008.2) */
+	async applyRemote(itemId: string): Promise<void> {
+		const item = this._findQueueItem(itemId);
+		if (!item) return;
+
+		// 원격 내용으로 로컬 덮어쓰기
+		try {
+			const vault = this._createVaultAdapter();
+			await vault.write(item.file_path, item.server_content);
+		} catch (e) {
+			console.warn('Vector: Failed to apply remote', e);
+		}
+
+		// @MX:NOTE 서버 충돌 해결 API (REQ-PA-008)
+		if (item.conflict_id && this._syncEngine) {
+			try {
+				await this._syncEngine.resolveConflict(item.conflict_id, 'accept');
+			} catch (e) {
+				console.warn('Vector: Failed to resolve conflict on server', e);
+			}
+		}
+
+		this.conflictQueue.resolve(itemId);
+	}
+
+	/** 충돌 해결: 둘 다 보존 (AC-008.3) */
+	async applyBoth(itemId: string): Promise<void> {
+		const item = this._findQueueItem(itemId);
+		if (!item) return;
+
+		// 로컬 원본 유지 + 원격 내용을 .sync-conflict-* 파일로 저장
+		try {
+			const vault = this._createVaultAdapter();
+			const timestamp = new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
+			const conflictPath = ConflictResolver.createConflictPathStatic(item.file_path, timestamp);
+			await vault.write(conflictPath, item.server_content);
+		} catch (e) {
+			console.warn('Vector: Failed to apply both', e);
+		}
+
+		// @MX:NOTE 병합 해결 API (REQ-PA-009)
+		if (item.conflict_id && this._syncEngine) {
+			try {
+				const vault = this._createVaultAdapter();
+				const localContent = await vault.readIfExists(item.file_path);
+				if (localContent !== null) {
+					const { computeHash } = await import('./utils/hash');
+					const hash = await computeHash(localContent);
+					await this._syncEngine.mergeResolve(item.conflict_id, localContent, hash);
+				}
+			} catch (e) {
+				console.warn('Vector: Failed to merge-resolve on server', e);
+			}
+		}
+
+		this.conflictQueue.resolve(itemId);
+	}
+
+	/** 충돌 해결 (큐에서만 제거) */
+	resolveConflict(itemId: string): void {
+		this.conflictQueue.resolve(itemId);
+	}
+
+	/** 충돌 해결 모달 열기 */
+	private _openResolveModal(item: ConflictQueueItem): void {
+		new Notice(`충돌 해결: ${item.file_path}`);
+	}
+
+	/** 벌크 원격 적용 */
+	private async _bulkResolveRemote(items: ConflictQueueItem[]): Promise<void> {
+		await Promise.all(items.map((item) => this.applyRemote(item.id)));
+		new Notice(`${items.length}개 충돌을 원격 적용으로 해결했습니다`);
+	}
+
+	/** 설정이 구성되었는지 확인 */
+	private _isConfigured(): boolean {
+		return !!(
+			this.settings.server_url &&
+			this.settings.api_key &&
+			this.settings.vault_id
+		);
+	}
+
+	/** 동기화 시작 */
+	private _startSync() {
+		if (!this._syncEngine) return;
+
+		this._syncEngine.start((cb: () => void, ms: number) => {
+			this.registerInterval(window.setInterval(cb, ms));
+		});
+
+		// 초기 동기화 수행
+		this._syncEngine.performInitialSync();
+		this.updateStatus('idle');
+	}
+
+	/** 명령 등록 */
+	private _registerCommands() {
+		// REQ-P4-019: 수동 동기화 명령
+		this.addCommand({
+			id: 'vector-force-sync',
+			name: 'Vector: Force sync',
+			callback: async () => {
+				if (!this._syncEngine) return;
+				this.updateStatus('syncing');
+				try {
+					await this._syncEngine.performFullSync();
+					this.updateStatus('idle');
+				} catch (error) {
+					this.updateStatus('error', (error as Error).message);
+				}
+			},
+		});
+
+		// REQ-P4-020: 동기화 상태 보기
+		this.addCommand({
+			id: 'vector-show-status',
+			name: 'Vector: Show sync status',
+			callback: () => {
+				const status = this._syncEngine?.getStatus() || 'unknown';
+				const mode = this._syncEngine?.getConnectionMode() || 'unknown';
+				new Notice(`Vector status: ${status} (${mode})`);
+			},
+		});
+
+		// @MX:NOTE 충돌 해결 커맨드 (SPEC-P6-UX-002 REQ-UX-009)
+		this.addCommand({
+			id: 'resolve-conflicts',
+			name: 'Vector: Resolve conflicts',
+			callback: () => {
+				this.activateConflictView();
+			},
+		});
+
+		// @MX:NOTE 서버 파일 검색 커맨드 (REQ-PA-013, REQ-PA-014)
+		this.addCommand({
+			id: 'vector-search',
+			name: 'Vector: Search server files',
+			callback: () => {
+				this._openSearchModal();
+			},
+		});
+
+		// 동기화 로그 열기
+		this.addCommand({
+			id: 'vector-open-log',
+			name: 'Vector: Open sync log',
+			callback: () => {
+				this._activateLogView();
+			},
+		});
+	}
+
+	/** 충돌 해결 뷰 활성화 (REQ-UX-009) */
+	async activateConflictView(): Promise<void> {
+		const count = this.conflictQueue.size();
+
+		if (count === 0) {
+			new Notice('해결할 충돌이 없습니다');
+			return;
+		}
+
+		// 사이드 패널에 뷰 열기
+		const leaves = this.app.workspace.getLeavesOfType(ConflictQueueView.VIEW_TYPE);
+		if (leaves.length > 0) {
+			// 이미 열려있으면 포커스
+			(leaves[0] as any).setEphemeralState?.({ focus: true }); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian WorkspaceLeaf.setEphemeralState 미노출
+		} else {
+			// 오른쪽 사이드바에 열기
+			const rightLeaf = (this.app.workspace as any).getRightLeaf?.(false); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian Workspace.getRightLeaf 미노출
+			if (rightLeaf) {
+				await rightLeaf.setViewState({
+					type: ConflictQueueView.VIEW_TYPE,
+					active: true,
+				});
+			}
+		}
+	}
+
+	/**
+	 * 서버 파일 검색 모달 열기 (REQ-PA-013, REQ-PA-014)
+	 * 검색어 입력 → 서버 검색 → 결과 표시 → 클릭으로 파일 열기
+	 */
+	private _openSearchModal(): void {
+		if (!this._syncEngine) {
+			new Notice('동기화 엔진이 초기화되지 않았습니다');
+			return;
+		}
+
+		const searchModal = new SearchInputModal(this.app, async (query: string) => {
+			try {
+				const response = await this._syncEngine!.searchFiles(query);
+				if (response.results.length === 0) {
+					new Notice(`"${query}"에 대한 검색 결과가 없습니다`);
+					return;
+				}
+				// 검색 결과 모달 표시
+				const resultModal = new SearchModal(
+					this.app,
+					query,
+					response.results,
+					response.total,
+					(filePath: string) => this._openFileFromSearch(filePath),
+				);
+				resultModal.open();
+			} catch (error) {
+				const msg = (error as Error).message || '알 수 없는 오류';
+				new Notice(`검색 실패: ${msg}`);
+			}
+		});
+		searchModal.open();
+	}
+
+	/**
+	 * 검색 결과에서 파일 열기 (REQ-PA-014)
+	 */
+	private async _openFileFromSearch(filePath: string): Promise<void> {
+		try {
+			const file = this.app.vault.getAbstractFileByPath(filePath);
+			if (file) {
+				// 기존 탭에서 파일 열기
+				await (this.app.workspace as any).getLeaf(false)?.openFile(file); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian Workspace.getLeaf 타입 제약
+			} else {
+				new Notice(`파일을 찾을 수 없습니다: ${filePath}`);
+			}
+		} catch (error) {
+			new Notice(`파일 열기 실패: ${(error as Error).message}`);
+		}
+	}
+
+	// ============================================================
+	// SPEC-P6-PERSIST-004: 큐 영속화 헬퍼
+	// ============================================================
+
+	private static readonly OFFLINE_QUEUE_KEY = '__offlineQueue';
+
+	/** 큐를 data.json에 영속화 (SPEC-P6-PERSIST-004) */
+	private async _persistQueue(items: OfflineQueueItem[]): Promise<void> {
+		try {
+			const serializable = items.filter(
+				(item) => !(item.content instanceof ArrayBuffer)
+			);
+			const data = (await this.loadData()) as Record<string, unknown> ?? {};
+			data[VectorPlugin.OFFLINE_QUEUE_KEY] = serializable;
+			await this.saveData(data);
+		} catch (e) {
+			console.warn('Vector: Failed to persist offline queue', e);
+		}
+	}
+
+	/** 저장된 데이터에서 큐 파싱 (SPEC-P6-PERSIST-004) */
+	private _parseQueueData(data: unknown): OfflineQueueItem[] {
+		if (!data || typeof data !== 'object') return [];
+		const obj = data as Record<string, unknown>;
+		const queue = obj[VectorPlugin.OFFLINE_QUEUE_KEY];
+		if (!Array.isArray(queue)) return [];
+		return queue.filter((item) => this._isValidQueueItem(item));
+	}
+
+	/** 큐 항목 스키마 검증 (SPEC-P6-PERSIST-004) */
+	private _isValidQueueItem(item: unknown): boolean {
+		if (typeof item !== 'object' || item === null) return false;
+		const obj = item as Record<string, unknown>;
+		return (
+			typeof obj.file_path === 'string' &&
+			typeof obj.operation === 'string' &&
+			(obj.operation === 'upload' || obj.operation === 'delete') &&
+			typeof obj.timestamp === 'number' &&
+			typeof obj.retry_count === 'number'
+		);
+	}
+
+	/** 7일 이전 항목 정리 (SPEC-P6-PERSIST-004 REQ-P6-006) */
+	private _cleanStaleEntries(items: OfflineQueueItem[]): OfflineQueueItem[] {
+		const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+		const cutoff = Date.now() - SEVEN_DAYS_MS;
+		const valid = items.filter((item) => item.timestamp >= cutoff);
+		const removedCount = items.length - valid.length;
+		if (removedCount > 0) {
+			console.log(`Vector: Removed ${removedCount} stale queue entries`);
+		}
+		return valid;
+	}
+
+	/** Vault 어댑터 생성 (SPEC-P6-RELIABLE-005) */
+	/* eslint-disable @typescript-eslint/no-explicit-any -- Obsidian Vault API가 TAbstractFile을 반환하나 read/modify/delete는 TFile 요구 */
+	private _createVaultAdapter(): VaultAdapter {
+		const vault = this.app.vault;
+		return {
+			/// @MX:ANCHOR VaultAdapter.read - 누락 파일 시 FileNotFoundError throw (SPEC-P6-RELIABLE-005 AC-001.1)
+			async read(path: string): Promise<string> {
+				// AC-006.6: 경로 검증
+				const validatedPath = validateVaultPath(path);
+
+				const file = vault.getAbstractFileByPath(validatedPath);
+				if (!file) {
+					// AC-001.1: 빈 문자열 대신 FileNotFoundError throw
+					throw new FileNotFoundError(validatedPath);
+				}
+				try {
+					return await vault.read(file as any);
+				} catch (error) {
+					// AC-007.1: 구조화된 에러 로깅
+					console.error(`[vault-adapter] read error: ${validatedPath}`, error);
+					throw new VaultReadError(validatedPath, error instanceof Error ? error : undefined);
+				}
+			},
+			async readIfExists(path: string): Promise<string | null> {
+				// AC-006.6: 경로 검증
+				const validatedPath = validateVaultPath(path);
+
+				const file = vault.getAbstractFileByPath(validatedPath);
+				if (!file) return null; // AC-001.4: 동작 불변
+				try {
+					return await vault.read(file as any);
+				} catch (error) {
+					console.error(`[vault-adapter] readIfExists error: ${validatedPath}`, error);
+					return null;
+				}
+			},
+			/// @MX:ANCHOR VaultAdapter.write - 에러 래핑 및 로깅 (SPEC-P6-RELIABLE-005 AC-007.3)
+			async write(path: string, content: string): Promise<void> {
+				// AC-006.6: 경로 검증
+				const validatedPath = validateVaultPath(path);
+
+				try {
+					const file = vault.getAbstractFileByPath(validatedPath);
+					if (file) {
+						await vault.modify(file as any, content);
+					} else {
+						// 부모 디렉토리가 없으면 생성
+						const dir = validatedPath.split('/').slice(0, -1).join('/');
+						if (dir) {
+							const dirExists = vault.getAbstractFileByPath(dir);
+							if (!dirExists) {
+								try { await vault.createFolder(dir); } catch { /* 이미 존재 */ }
+							}
+						}
+						await vault.create(validatedPath, content);
+					}
+				} catch (error) {
+					// AC-007.3: 쓰기 에러 로깅
+					console.error(`[vault-adapter] write error: ${validatedPath}`, error);
+					throw new VaultWriteError(validatedPath, error instanceof Error ? error : undefined);
+				}
+			},
+			async delete(path: string): Promise<void> {
+				// AC-006.6: 경로 검증
+				const validatedPath = validateVaultPath(path);
+
+				const file = vault.getAbstractFileByPath(validatedPath);
+				if (file) {
+					await vault.delete(file as any);
+				}
+			},
+			getFiles(): Array<{ path: string }> {
+				return vault.getFiles();
+			},
+			on: (event: string, handler: (...args: unknown[]) => void): void => {
+				// registerEvent로 등록해야 플러그인 언로드 시 자동 해제됨
+				const ref = vault.on(event as any, handler as any);
+				this.registerEvent(ref);
+			},
+			off(event: string, handler: (...args: unknown[]) => void): void {
+				vault.off(event as any, handler as any);
+			},
+			// 바이너리 지원 (REQ-P6-004 ~ REQ-P6-006)
+			async readBinary(path: string): Promise<ArrayBuffer> {
+				const validatedPath = validateVaultPath(path);
+				const file = vault.getAbstractFileByPath(validatedPath);
+				if (!file) throw new FileNotFoundError(validatedPath);
+				return await vault.readBinary(file as any);
+			},
+			async readBinaryIfExists(path: string): Promise<ArrayBuffer | null> {
+				try {
+					const validatedPath = validateVaultPath(path);
+					const file = vault.getAbstractFileByPath(validatedPath);
+					if (!file) return null;
+					return await vault.readBinary(file as any);
+				} catch {
+					return null;
+				}
+			},
+			async writeBinary(path: string, data: ArrayBuffer): Promise<void> {
+				const validatedPath = validateVaultPath(path);
+				const file = vault.getAbstractFileByPath(validatedPath);
+				if (file) {
+					await vault.modifyBinary(file as any, data);
+				} else {
+					// 부모 디렉토리가 없으면 생성
+					const dir = validatedPath.split('/').slice(0, -1).join('/');
+					if (dir) {
+						const dirExists = vault.getAbstractFileByPath(dir);
+						if (!dirExists) {
+							try { await vault.createFolder(dir); } catch { /* 이미 존재 */ }
+						}
+					}
+					await vault.createBinary(validatedPath, data);
+				}
+			},
+		};
+	}
+	/* eslint-enable @typescript-eslint/no-explicit-any */
+}
