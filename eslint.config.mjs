@@ -1,4 +1,4 @@
-import { createConfig } from "../eslint.shared.mjs";
+import { createConfig } from "../../eslint.shared.mjs";
 
 export default createConfig({
   ignores: [

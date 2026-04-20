@@ -1,9 +1,9 @@
 {
-	"id": "obsidian-sync",
-	"name": "ObsidianSync",
+	"id": "vector",
+	"name": "Vector",
 	"version": "0.1.0",
 	"minAppVersion": "1.0.0",
-	"description": "Sync markdown files with ObsidianSync server",
+	"description": "Sync with Vector server",
 	"author": "yu",
 	"authorUrl": "",
 	"isDesktopOnly": false
