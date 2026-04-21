@@ -1,10 +1,10 @@
-// Vector 플러그인 진입점
+// vSync 플러그인 진입점
 
 import { Plugin, Notice } from 'obsidian';
 import { SyncEngine } from './sync-engine';
-import { VectorSettingTab } from './settings';
+import { VSyncSettingTab } from './settings';
 import { DEFAULT_SETTINGS } from './types';
-import type { VectorSettings, OfflineQueueItem } from './types';
+import type { VSyncSettings, OfflineQueueItem } from './types';
 import type { ConnectionMode } from './types';
 import type { VaultAdapter } from './sync-engine';
 import { ConflictQueue, ConflictResolver } from './conflict';
@@ -16,8 +16,8 @@ import { FileNotFoundError, VaultReadError, VaultWriteError } from './errors';
 import { validateVaultPath } from './utils/path';
 import { syncLogger } from './sync-logger';
 
-export default class VectorPlugin extends Plugin {
-	settings: VectorSettings = { ...DEFAULT_SETTINGS };
+export default class VSyncPlugin extends Plugin {
+	settings: VSyncSettings = { ...DEFAULT_SETTINGS };
 	private _syncEngine: SyncEngine | null = null;
 	private _statusBarItem: { setText: (text: string) => void; setAttr: (attr: string, value: string) => void; _lastText?: string; hide?: () => void; show?: () => void } | null = null;
 
@@ -28,7 +28,7 @@ export default class VectorPlugin extends Plugin {
 		// 설정 로드
 		const savedData = await this.loadData();
 		if (savedData) {
-			this.settings = { ...DEFAULT_SETTINGS, ...savedData as Partial<VectorSettings> };
+			this.settings = { ...DEFAULT_SETTINGS, ...savedData as Partial<VSyncSettings> };
 		}
 
 		// deviceId가 없으면 자동 생성
@@ -39,7 +39,7 @@ export default class VectorPlugin extends Plugin {
 
 		// 상태 표시줄 생성
 		this._statusBarItem = this.addStatusBarItem() as unknown as typeof this._statusBarItem;
-		this._statusBarItem?.setText('Vector: loading...');
+		this._statusBarItem?.setText('vSync: loading...');
 
 		// Vault 어댑터 생성
 		const vaultAdapter = this._createVaultAdapter();
@@ -125,7 +125,7 @@ export default class VectorPlugin extends Plugin {
 		this._registerCommands();
 
 		// 설정 탭 등록 + 디바이스 API 주입 (REQ-PA-011, REQ-PA-012)
-		const settingTab = new VectorSettingTab(this.app, this);
+		const settingTab = new VSyncSettingTab(this.app, this);
 		if (this._syncEngine) {
 			settingTab.setDeviceApi({
 				getDevices: () => this._syncEngine!.getDevices(),
@@ -189,12 +189,12 @@ export default class VectorPlugin extends Plugin {
 	/** 상태 업데이트 (REQ-P4-017 + REQ-P3-014) */
 	updateStatus(status: string, message?: string) {
 		const statusTexts: Record<string, string> = {
-			idle: 'Vector: Synced',
-			syncing: 'Vector: Syncing...',
-			polling: 'Vector: Synced (polling)',
-			connecting: 'Vector: Connecting...',
-			error: `Vector: Error: ${message || 'Unknown'}`,
-			not_configured: 'Vector: Not configured',
+			idle: 'vSync: Synced',
+			syncing: 'vSync: Syncing...',
+			polling: 'vSync: Synced (polling)',
+			connecting: 'vSync: Connecting...',
+			error: `vSync: Error: ${message || 'Unknown'}`,
+			not_configured: 'vSync: Not configured',
 		};
 
 		const text = statusTexts[status] || status;
@@ -246,7 +246,7 @@ export default class VectorPlugin extends Plugin {
 					(this._syncEngine as any)._uploadLocalFile(item.file_path); // eslint-disable-line @typescript-eslint/no-explicit-any -- SyncEngine private 메서드 접근
 				}
 			} catch (e) {
-				console.warn('Vector: Failed to apply local', e);
+				console.warn('vSync: Failed to apply local', e);
 			}
 
 			// @MX:NOTE 서버 충돌 해결 API (REQ-PA-008)
@@ -254,7 +254,7 @@ export default class VectorPlugin extends Plugin {
 				try {
 					await this._syncEngine.resolveConflict(item.conflict_id, 'reject');
 				} catch (e) {
-					console.warn('Vector: Failed to resolve conflict on server', e);
+					console.warn('vSync: Failed to resolve conflict on server', e);
 				}
 			}
 		}
@@ -273,7 +273,7 @@ export default class VectorPlugin extends Plugin {
 			const vault = this._createVaultAdapter();
 			await vault.write(item.file_path, item.server_content);
 		} catch (e) {
-			console.warn('Vector: Failed to apply remote', e);
+			console.warn('vSync: Failed to apply remote', e);
 		}
 
 		// @MX:NOTE 서버 충돌 해결 API (REQ-PA-008)
@@ -281,7 +281,7 @@ export default class VectorPlugin extends Plugin {
 			try {
 				await this._syncEngine.resolveConflict(item.conflict_id, 'accept');
 			} catch (e) {
-				console.warn('Vector: Failed to resolve conflict on server', e);
+				console.warn('vSync: Failed to resolve conflict on server', e);
 			}
 		}
 
@@ -300,7 +300,7 @@ export default class VectorPlugin extends Plugin {
 			const conflictPath = ConflictResolver.createConflictPathStatic(item.file_path, timestamp);
 			await vault.write(conflictPath, item.server_content);
 		} catch (e) {
-			console.warn('Vector: Failed to apply both', e);
+			console.warn('vSync: Failed to apply both', e);
 		}
 
 		// @MX:NOTE 병합 해결 API (REQ-PA-009)
@@ -314,7 +314,7 @@ export default class VectorPlugin extends Plugin {
 					await this._syncEngine.mergeResolve(item.conflict_id, localContent, hash);
 				}
 			} catch (e) {
-				console.warn('Vector: Failed to merge-resolve on server', e);
+				console.warn('vSync: Failed to merge-resolve on server', e);
 			}
 		}
 
@@ -363,8 +363,8 @@ export default class VectorPlugin extends Plugin {
 	private _registerCommands() {
 		// REQ-P4-019: 수동 동기화 명령
 		this.addCommand({
-			id: 'vector-force-sync',
-			name: 'Vector: Force sync',
+			id: 'vsync-force-sync',
+			name: 'vSync: Force sync',
 			callback: async () => {
 				if (!this._syncEngine) return;
 				this.updateStatus('syncing');
@@ -379,19 +379,19 @@ export default class VectorPlugin extends Plugin {
 
 		// REQ-P4-020: 동기화 상태 보기
 		this.addCommand({
-			id: 'vector-show-status',
-			name: 'Vector: Show sync status',
+			id: 'vsync-show-status',
+			name: 'vSync: Show sync status',
 			callback: () => {
 				const status = this._syncEngine?.getStatus() || 'unknown';
 				const mode = this._syncEngine?.getConnectionMode() || 'unknown';
-				new Notice(`Vector status: ${status} (${mode})`);
+				new Notice(`vSync status: ${status} (${mode})`);
 			},
 		});
 
 		// @MX:NOTE 충돌 해결 커맨드 (SPEC-P6-UX-002 REQ-UX-009)
 		this.addCommand({
 			id: 'resolve-conflicts',
-			name: 'Vector: Resolve conflicts',
+			name: 'vSync: Resolve conflicts',
 			callback: () => {
 				this.activateConflictView();
 			},
@@ -399,8 +399,8 @@ export default class VectorPlugin extends Plugin {
 
 		// @MX:NOTE 서버 파일 검색 커맨드 (REQ-PA-013, REQ-PA-014)
 		this.addCommand({
-			id: 'vector-search',
-			name: 'Vector: Search server files',
+			id: 'vsync-search',
+			name: 'vSync: Search server files',
 			callback: () => {
 				this._openSearchModal();
 			},
@@ -408,8 +408,8 @@ export default class VectorPlugin extends Plugin {
 
 		// 동기화 로그 열기
 		this.addCommand({
-			id: 'vector-open-log',
-			name: 'Vector: Open sync log',
+			id: 'vsync-open-log',
+			name: 'vSync: Open sync log',
 			callback: () => {
 				this._activateLogView();
 			},
@@ -506,10 +506,10 @@ export default class VectorPlugin extends Plugin {
 				(item) => !(item.content instanceof ArrayBuffer)
 			);
 			const data = (await this.loadData()) as Record<string, unknown> ?? {};
-			data[VectorPlugin.OFFLINE_QUEUE_KEY] = serializable;
+			data[VSyncPlugin.OFFLINE_QUEUE_KEY] = serializable;
 			await this.saveData(data);
 		} catch (e) {
-			console.warn('Vector: Failed to persist offline queue', e);
+			console.warn('vSync: Failed to persist offline queue', e);
 		}
 	}
 
@@ -517,7 +517,7 @@ export default class VectorPlugin extends Plugin {
 	private _parseQueueData(data: unknown): OfflineQueueItem[] {
 		if (!data || typeof data !== 'object') return [];
 		const obj = data as Record<string, unknown>;
-		const queue = obj[VectorPlugin.OFFLINE_QUEUE_KEY];
+		const queue = obj[VSyncPlugin.OFFLINE_QUEUE_KEY];
 		if (!Array.isArray(queue)) return [];
 		return queue.filter((item) => this._isValidQueueItem(item));
 	}
@@ -542,7 +542,7 @@ export default class VectorPlugin extends Plugin {
 		const valid = items.filter((item) => item.timestamp >= cutoff);
 		const removedCount = items.length - valid.length;
 		if (removedCount > 0) {
-			console.log(`Vector: Removed ${removedCount} stale queue entries`);
+			console.log(`vSync: Removed ${removedCount} stale queue entries`);
 		}
 		return valid;
 	}

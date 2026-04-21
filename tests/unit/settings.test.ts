@@ -1,8 +1,8 @@
 // 설정 탭 테스트
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { VectorSettingTab } from '../../src/settings';
+import { VSyncSettingTab } from '../../src/settings';
 import type { DeviceApi } from '../../src/settings';
-import type { VectorSettings } from '../../src/types';
+import type { VSyncSettings } from '../../src/types';
 import type { DeviceInfo } from '../../src/types';
 import { DEFAULT_SETTINGS } from '../../src/types';
 
@@ -52,9 +52,9 @@ vi.mock('obsidian', () => ({
 	},
 }));
 
-describe('VectorSettingTab', () => {
-	let tab: VectorSettingTab;
-	let settings: VectorSettings;
+describe('VSyncSettingTab', () => {
+	let tab: VSyncSettingTab;
+	let settings: VSyncSettings;
 	let onSettingsChange: ReturnType<typeof vi.fn>;
 
 	beforeEach(() => {
@@ -69,7 +69,7 @@ describe('VectorSettingTab', () => {
 			onSettingsChange,
 		};
 
-		tab = new VectorSettingTab({} as never, mockPlugin as never);
+		tab = new VSyncSettingTab({} as never, mockPlugin as never);
 	});
 
 	describe('validateSettings (REQ-P4-004)', () => {
@@ -194,7 +194,7 @@ describe('VectorSettingTab', () => {
 				onSettingsChange,
 			};
 
-			tab = new VectorSettingTab({} as never, mockPlugin as never);
+			tab = new VSyncSettingTab({} as never, mockPlugin as never);
 		});
 
 		describe('setDeviceApi (REQ-PA-011)', () => {

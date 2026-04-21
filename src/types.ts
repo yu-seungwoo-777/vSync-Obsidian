@@ -1,4 +1,4 @@
-// Vector 타입 정의
+// vSync 타입 정의
 //
 // API 응답 타입은 OpenAPI 명세에서 자동 생성됨 (docs/api/openapi.yaml)
 // 비-API 타입만 이 파일에 정의
@@ -10,7 +10,7 @@ import type { components } from './types/api-types';
 // ============================================================
 
 /** 플러그인 설정 인터페이스 */
-export interface VectorSettings {
+export interface VSyncSettings {
 	/** 서버 URL (trailing slash 제거) */
 	server_url: string;
 	/** API 인증 키 */
@@ -28,7 +28,7 @@ export interface VectorSettings {
 }
 
 /** 기본 설정값 */
-export const DEFAULT_SETTINGS: VectorSettings = {
+export const DEFAULT_SETTINGS: VSyncSettings = {
 	server_url: '',
 	api_key: '',
 	vault_id: '',
@@ -185,8 +185,8 @@ export interface ConflictQueueItem {
 // 타입 가드
 // ============================================================
 
-/** VectorSettings 타입 가드 */
-export function isVectorSettings(value: unknown): value is VectorSettings {
+/** VSyncSettings 타입 가드 */
+export function isVSyncSettings(value: unknown): value is VSyncSettings {
 	if (typeof value !== 'object' || value === null) return false;
 	const obj = value as Record<string, unknown>;
 	return (

@@ -1,4 +1,4 @@
-// Vector API 클라이언트
+// vSync API 클라이언트
 
 import { requestUrl } from 'obsidian';
 import type {
@@ -164,7 +164,7 @@ export class RateLimitBackoff {
 	}
 }
 
-export class VectorClient {
+export class VSyncClient {
 	private _base_url: string;
 	private _api_key: string;
 	private _vault_id: string;
@@ -644,7 +644,7 @@ export class VectorClient {
 		try {
 			this._persist_callback(this._offline_queue);
 		} catch {
-			console.warn('Vector: Failed to persist offline queue');
+			console.warn('vSync: Failed to persist offline queue');
 		}
 	}
 

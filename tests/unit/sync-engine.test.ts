@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SyncEngine } from '../../src/sync-engine';
 import { WSClient } from '../../src/services/ws-client';
 import { ConflictQueue } from '../../src/conflict';
-import type { VectorSettings } from '../../src/types';
+import type { VSyncSettings } from '../../src/types';
 import { DEFAULT_SETTINGS } from '../../src/types';
 import { createMockVault, createMockFile } from '../mocks/vault';
 import { computeHash } from '../../src/utils/hash';
@@ -36,7 +36,7 @@ const mockApiClient = {
 };
 
 vi.mock('../../src/api-client', () => ({
-	VectorClient: vi.fn().mockImplementation(() => mockApiClient),
+	VSyncClient: vi.fn().mockImplementation(() => mockApiClient),
 		MAX_BINARY_SIZE: 52_428_800,
 }));
 
@@ -68,7 +68,7 @@ vi.mock('../../src/services/ws-client', () => ({
 describe('SyncEngine', () => {
 	let engine: SyncEngine;
 	let vault: ReturnType<typeof createMockVault>;
-	let settings: VectorSettings;
+	let settings: VSyncSettings;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -694,7 +694,7 @@ describe('SyncEngine', () => {
 			});
 
 			it('설정에서 해시 캐시를 복원해야 한다 (AC-006.2)', () => {
-				const s: VectorSettings = { ...settings, hash_cache: { 'a.md': 'ha', 'b.md': 'hb' } };
+				const s: VSyncSettings = { ...settings, hash_cache: { 'a.md': 'ha', 'b.md': 'hb' } };
 				const e = new SyncEngine(s, vault as never, mockNotice);
 				const c = (e as any)._hash_cache as Map<string, string>;
 				expect(c.size).toBe(2);

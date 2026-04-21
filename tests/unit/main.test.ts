@@ -31,9 +31,9 @@ vi.mock('../../src/sync-engine', () => ({
 	}),
 }));
 
-// VectorSettingTab mock
+// VSyncSettingTab mock
 vi.mock('../../src/settings', () => ({
-	VectorSettingTab: vi.fn().mockImplementation(() => ({
+	VSyncSettingTab: vi.fn().mockImplementation(() => ({
 		display: vi.fn(),
 		hide: vi.fn(),
 		isConfigured: vi.fn().mockReturnValue(true),
@@ -69,15 +69,15 @@ vi.mock('../../src/ui/SearchModal', () => ({
 	})),
 }));
 
-import VectorPlugin from '../../src/main';
+import VSyncPlugin from '../../src/main';
 
-describe('VectorPlugin', () => {
-	let plugin: VectorPlugin;
+describe('VSyncPlugin', () => {
+	let plugin: VSyncPlugin;
 
 	beforeEach(() => {
 		vi.clearAllMocks();
 		capturedVaultAdapter = null;
-		plugin = new VectorPlugin();
+		plugin = new VSyncPlugin();
 	});
 
 	describe('onload (REQ-P4-017)', () => {
@@ -90,7 +90,7 @@ describe('VectorPlugin', () => {
 			await plugin.onload();
 			expect(plugin.addCommand).toHaveBeenCalledWith(
 				expect.objectContaining({
-					id: 'vector-force-sync',
+					id: 'vsync-force-sync',
 					name: expect.stringContaining('Force sync'),
 				})
 			);
@@ -100,7 +100,7 @@ describe('VectorPlugin', () => {
 			await plugin.onload();
 			expect(plugin.addCommand).toHaveBeenCalledWith(
 				expect.objectContaining({
-					id: 'vector-show-status',
+					id: 'vsync-show-status',
 					name: expect.stringContaining('Show sync status'),
 				})
 			);
@@ -200,7 +200,7 @@ describe('VectorPlugin', () => {
 			await plugin.onload();
 
 			const forceSyncCommand = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-				(call: any[]) => call[0].id === 'vector-force-sync'
+				(call: any[]) => call[0].id === 'vsync-force-sync'
 			);
 			expect(forceSyncCommand).toBeDefined();
 
@@ -215,7 +215,7 @@ describe('VectorPlugin', () => {
 			await plugin.onload();
 
 			const forceSyncCommand = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-				(call: any[]) => call[0].id === 'vector-force-sync'
+				(call: any[]) => call[0].id === 'vsync-force-sync'
 			);
 			expect(forceSyncCommand).toBeDefined();
 
@@ -236,7 +236,7 @@ describe('VectorPlugin', () => {
 			await plugin.onload();
 
 			const showStatusCommand = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-				(call: any[]) => call[0].id === 'vector-show-status'
+				(call: any[]) => call[0].id === 'vsync-show-status'
 			);
 			expect(showStatusCommand).toBeDefined();
 

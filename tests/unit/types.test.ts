@@ -2,12 +2,12 @@
 import { describe, it, expect } from 'vitest';
 import {
 	DEFAULT_SETTINGS,
-	isVectorSettings,
+	isVSyncSettings,
 	isFileInfo,
 	isSyncEvent,
 } from '../../src/types';
 import type {
-	VectorSettings,
+	VSyncSettings,
 	FileInfo,
 	SyncEvent,
 	SyncStatusResponse,
@@ -38,20 +38,20 @@ describe('Type Definitions', () => {
 		});
 	});
 
-	describe('isVectorSettings (타입 가드)', () => {
+	describe('isVSyncSettings (타입 가드)', () => {
 		it('유효한 설정 객체를 true로 판별해야 한다', () => {
-			const valid: VectorSettings = {
+			const valid: VSyncSettings = {
 				server_url: 'https://example.com',
 				api_key: 'test-key',
 				vault_id: 'vault-1',
 				sync_interval: 30,
 				device_id: 'device-1',
 			};
-			expect(isVectorSettings(valid)).toBe(true);
+			expect(isVSyncSettings(valid)).toBe(true);
 		});
 
 		it('lastEventId가 포함된 설정도 true여야 한다', () => {
-			const withCursor: VectorSettings = {
+			const withCursor: VSyncSettings = {
 				server_url: 'https://example.com',
 				api_key: 'test-key',
 				vault_id: 'vault-1',
@@ -59,19 +59,19 @@ describe('Type Definitions', () => {
 				device_id: 'device-1',
 				last_event_id: '42',
 			};
-			expect(isVectorSettings(withCursor)).toBe(true);
+			expect(isVSyncSettings(withCursor)).toBe(true);
 		});
 
 		it('필수 필드가 누락되면 false를 반환해야 한다', () => {
-			expect(isVectorSettings({})).toBe(false);
-			expect(isVectorSettings({ server_url: 'test' })).toBe(false);
-			expect(isVectorSettings(null)).toBe(false);
-			expect(isVectorSettings(undefined)).toBe(false);
+			expect(isVSyncSettings({})).toBe(false);
+			expect(isVSyncSettings({ server_url: 'test' })).toBe(false);
+			expect(isVSyncSettings(null)).toBe(false);
+			expect(isVSyncSettings(undefined)).toBe(false);
 		});
 
 		it('잘못된 타입의 필드가 있으면 false를 반환해야 한다', () => {
 			expect(
-				isVectorSettings({
+				isVSyncSettings({
 					server_url: 123,
 					api_key: 'key',
 					vault_id: 'v',

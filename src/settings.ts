@@ -1,7 +1,7 @@
-// Vector 설정 탭
+// vSync 설정 탭
 
 import { PluginSettingTab, requestUrl, Notice, Setting } from 'obsidian';
-import type { VectorSettings, DeviceInfo } from './types';
+import type { VSyncSettings, DeviceInfo } from './types';
 import { DEFAULT_SETTINGS } from './types';
 
 /** 설정 검증 결과 */
@@ -27,13 +27,13 @@ export interface DeviceApi {
 	getCurrentDeviceId: () => string;
 }
 
-export class VectorSettingTab extends PluginSettingTab {
-	plugin: { settings: VectorSettings; saveSettings: () => Promise<void> };
+export class VSyncSettingTab extends PluginSettingTab {
+	plugin: { settings: VSyncSettings; saveSettings: () => Promise<void> };
 	private _deviceApi: DeviceApi | null = null;
 
 	constructor(
 		app: any, // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian PluginSettingTab 생성자가 App 타입 요구
-		plugin: { settings: VectorSettings; saveSettings: () => Promise<void> },
+		plugin: { settings: VSyncSettings; saveSettings: () => Promise<void> },
 	) {
 		super(app, plugin as any); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian PluginSettingTab 생성자가 Plugin 타입 요구
 		this.plugin = plugin;
@@ -48,12 +48,12 @@ export class VectorSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		containerEl.createEl('h2', { text: 'Vector Settings' });
+		containerEl.createEl('h2', { text: 'vSync Settings' });
 
 		// 서버 URL
 		new Setting(containerEl)
 			.setName('Server URL')
-			.setDesc('Vector server URL (e.g. http://localhost:3000)')
+			.setDesc('vSync server URL (e.g. http://localhost:3000)')
 			.addText((text) =>
 				text
 					.setPlaceholder('http://localhost:3000')
@@ -255,7 +255,7 @@ export class VectorSettingTab extends PluginSettingTab {
 	/**
 	 * 설정값 검증 (REQ-P4-004)
 	 */
-	validateSettings(settings: VectorSettings): ValidationResult {
+	validateSettings(settings: VSyncSettings): ValidationResult {
 		const hasServerUrl = settings.server_url.trim().length > 0;
 		const hasApiKey = settings.api_key.trim().length > 0;
 		const hasVaultId = settings.vault_id.trim().length > 0;
@@ -278,14 +278,14 @@ export class VectorSettingTab extends PluginSettingTab {
 	/**
 	 * 필수 설정이 모두 구성되었는지 확인 (REQ-P4-003)
 	 */
-	isConfigured(settings: VectorSettings): boolean {
+	isConfigured(settings: VSyncSettings): boolean {
 		return this.validateSettings(settings).all;
 	}
 
 	/**
 	 * 서버 연결 테스트 (REQ-P4-002)
 	 */
-	async testConnection(settings: VectorSettings): Promise<ConnectionTestResult> {
+	async testConnection(settings: VSyncSettings): Promise<ConnectionTestResult> {
 		const baseUrl = this.normalizeServerUrl(settings.server_url);
 		const url = `${baseUrl}/v1/vault/${settings.vault_id}/files`;
 
@@ -325,4 +325,4 @@ export class VectorSettingTab extends PluginSettingTab {
 }
 
 export { DEFAULT_SETTINGS };
-export type { VectorSettings };
+export type { VSyncSettings };

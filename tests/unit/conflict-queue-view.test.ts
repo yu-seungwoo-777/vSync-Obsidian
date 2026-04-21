@@ -155,7 +155,7 @@ describe('ConflictQueueView (T-009)', () => {
 	});
 
 	it('VIEW_TYPE이 "vector-conflicts"이어야 한다 (AC-006.1)', () => {
-		expect(ConflictQueueView.VIEW_TYPE).toBe('vector-conflicts');
+		expect(ConflictQueueView.VIEW_TYPE).toBe('vsync-conflicts');
 	});
 
 	it('뷰를 생성할 수 있어야 한다', () => {
@@ -227,7 +227,7 @@ describe('ConflictQueueView (T-009)', () => {
 		const queue = new ConflictQueue();
 		const mockLeaf = { view: null };
 		const view = new ConflictQueueView(mockLeaf, queue);
-		expect(view.getViewType()).toBe('vector-conflicts');
+		expect(view.getViewType()).toBe('vsync-conflicts');
 	});
 
 	it('getDisplayText가 올바른 값을 반환해야 한다', () => {

@@ -4,7 +4,7 @@ import type { ConflictQueue, ConflictQueueItem } from '../conflict';
 
 // @MX:NOTE 충돌 목록 사이드 패널 뷰
 export class ConflictQueueView extends ItemView {
-	static VIEW_TYPE = 'vector-conflicts';
+	static VIEW_TYPE = 'vsync-conflicts';
 
 	private conflictQueue: ConflictQueue;
 	private _onResolveItem: ((item: ConflictQueueItem) => void) | null = null;

@@ -19,7 +19,7 @@ vi.mock('obsidian', () => ({
 	Platform: { isDesktop: true, isMobile: false },
 }));
 
-import { VectorClient, getMimeType } from '../../src/api-client';
+import { VSyncClient, getMimeType } from '../../src/api-client';
 
 function makeResponse(overrides: Partial<RequestUrlResponse> = {}): RequestUrlResponse {
 	return {
@@ -32,8 +32,8 @@ function makeResponse(overrides: Partial<RequestUrlResponse> = {}): RequestUrlRe
 	};
 }
 
-describe('VectorClient', () => {
-	let client: VectorClient;
+describe('VSyncClient', () => {
+	let client: VSyncClient;
 
 	const baseSettings = {
 		server_url: 'https://sync.example.com',
@@ -45,12 +45,12 @@ describe('VectorClient', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		mockRequestUrl.mockReset();
-		client = new VectorClient(baseSettings);
+		client = new VSyncClient(baseSettings);
 	});
 
 	describe('생성자', () => {
 		it('서버 URL의 trailing slash를 제거해야 한다', () => {
-			const c = new VectorClient({ ...baseSettings, server_url: 'https://example.com/' });
+			const c = new VSyncClient({ ...baseSettings, server_url: 'https://example.com/' });
 			expect(c).toBeDefined();
 		});
 	});
@@ -424,7 +424,7 @@ describe('VectorClient', () => {
 	describe('PersistCallback (REQ-P6-001)', () => {
 		it('enqueue 시 persistCallback이 호출되어야 한다', () => {
 			const persistCallback = vi.fn();
-			const c = new VectorClient(baseSettings, persistCallback);
+			const c = new VSyncClient(baseSettings, persistCallback);
 
 			c.enqueue({
 				file_path: 'test.md',
@@ -443,7 +443,7 @@ describe('VectorClient', () => {
 		});
 
 		it('persistCallback이 없으면 noop으로 동작해야 한다 (하위 호환)', () => {
-			const c = new VectorClient(baseSettings);
+			const c = new VSyncClient(baseSettings);
 			expect(() => {
 				c.enqueue({
 					file_path: 'test.md',
@@ -457,7 +457,7 @@ describe('VectorClient', () => {
 
 		it('flushQueue 성공 후 persistCallback이 호출되어야 한다', async () => {
 			const persistCallback = vi.fn();
-			const c = new VectorClient(baseSettings, persistCallback);
+			const c = new VSyncClient(baseSettings, persistCallback);
 
 			mockRequestUrl.mockResolvedValueOnce(
 				makeResponse({
@@ -484,7 +484,7 @@ describe('VectorClient', () => {
 	describe('filePath dedup (REQ-P6-004)', () => {
 		it('동일 filePath의 이전 항목을 제거하고 최신 항목만 유지해야 한다', () => {
 			const persistCallback = vi.fn();
-			const c = new VectorClient(baseSettings, persistCallback);
+			const c = new VSyncClient(baseSettings, persistCallback);
 
 			c.enqueue({
 				file_path: 'test.md',
@@ -511,7 +511,7 @@ describe('VectorClient', () => {
 		});
 
 		it('upload 후 delete 연속 시 delete만 큐에 남아야 한다', () => {
-			const c = new VectorClient(baseSettings);
+			const c = new VSyncClient(baseSettings);
 
 			c.enqueue({
 				file_path: 'test.md',
@@ -533,7 +533,7 @@ describe('VectorClient', () => {
 		});
 
 		it('delete 후 upload 연속 시 upload만 큐에 남아야 한다', () => {
-			const c = new VectorClient(baseSettings);
+			const c = new VSyncClient(baseSettings);
 
 			c.enqueue({
 				file_path: 'test.md',
@@ -555,7 +555,7 @@ describe('VectorClient', () => {
 		});
 
 		it('dedup 후에도 MAX_QUEUE_SIZE 제한을 유지해야 한다', () => {
-			const c = new VectorClient(baseSettings);
+			const c = new VSyncClient(baseSettings);
 
 			// 서로 다른 filePath로 100개 채우기
 			for (let i = 0; i < 100; i++) {
@@ -583,7 +583,7 @@ describe('VectorClient', () => {
 
 	describe('Flush mutex (REQ-P6-007)', () => {
 		it('동시 flushQueue 호출 시 두 번째는 즉시 반환해야 한다', async () => {
-			const c = new VectorClient(baseSettings);
+			const c = new VSyncClient(baseSettings);
 
 			// 긴 실행을 시뮬레이션
 			mockRequestUrl.mockImplementation(async () => {
@@ -612,7 +612,7 @@ describe('VectorClient', () => {
 		});
 
 		it('flush 중 예외 발생 시 _isFlushing이 false로 복원되어야 한다', async () => {
-			const c = new VectorClient(baseSettings);
+			const c = new VSyncClient(baseSettings);
 
 			mockRequestUrl.mockRejectedValueOnce(new Error('Network error'));
 
@@ -641,7 +641,7 @@ describe('VectorClient', () => {
 
 	describe('Exponential Backoff + Max Retries (REQ-P6-005)', () => {
 		it('네트워크 에러 시 retryCount가 증가해야 한다', async () => {
-			const c = new VectorClient(baseSettings);
+			const c = new VSyncClient(baseSettings);
 
 			mockRequestUrl.mockRejectedValue(new Error('Network error'));
 
@@ -661,7 +661,7 @@ describe('VectorClient', () => {
 
 		it('retryCount 3 도달 시 항목을 큐에서 제거하고 onFlushFailed를 호출해야 한다', async () => {
 			const onFlushFailed = vi.fn();
-			const c = new VectorClient(baseSettings, vi.fn(), onFlushFailed);
+			const c = new VSyncClient(baseSettings, vi.fn(), onFlushFailed);
 
 			mockRequestUrl.mockRejectedValue(new Error('Network error'));
 
@@ -686,7 +686,7 @@ describe('VectorClient', () => {
 
 		it('모든 영구 실패 항목을 모아서 onFlushFailed로 한 번에 알림해야 한다', async () => {
 			const onFlushFailed = vi.fn();
-			const c = new VectorClient(baseSettings, vi.fn(), onFlushFailed);
+			const c = new VSyncClient(baseSettings, vi.fn(), onFlushFailed);
 
 			// 네트워크 에러가 아닌 일반 에러 → 즉시 영구 실패
 			mockRequestUrl.mockRejectedValue({ status: 500 });
@@ -721,7 +721,7 @@ describe('VectorClient', () => {
 
 	describe('restoreQueue (REQ-P6-002)', () => {
 		it('restoreQueue 후 getQueueSize가 복원된 크기를 반환해야 한다', () => {
-			const c = new VectorClient(baseSettings);
+			const c = new VSyncClient(baseSettings);
 
 			c.restoreQueue([
 				{
@@ -744,7 +744,7 @@ describe('VectorClient', () => {
 		});
 
 		it('빈 배열로 restoreQueue 시 큐 크기가 0이어야 한다', () => {
-			const c = new VectorClient(baseSettings);
+			const c = new VSyncClient(baseSettings);
 
 			c.enqueue({
 				file_path: 'test.md',

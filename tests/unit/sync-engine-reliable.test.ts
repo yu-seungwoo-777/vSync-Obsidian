@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SyncEngine } from '../../src/sync-engine';
 import { FileNotFoundError, VaultReadError } from '../../src/errors';
 import { DEFAULT_SETTINGS } from '../../src/types';
-import type { VectorSettings } from '../../src/types';
+import type { VSyncSettings } from '../../src/types';
 import { createMockVault } from '../mocks/vault';
 
 // API 클라이언트 mock
@@ -24,7 +24,7 @@ const mockApiClient = {
 };
 
 vi.mock('../../src/api-client', () => ({
-	VectorClient: vi.fn().mockImplementation(() => mockApiClient),
+	VSyncClient: vi.fn().mockImplementation(() => mockApiClient),
 	MAX_BINARY_SIZE: 52_428_800,
 }));
 
@@ -56,7 +56,7 @@ vi.mock('../../src/services/ws-client', () => ({
 describe('SyncEngine - 신뢰성 (SPEC-P6-RELIABLE-005)', () => {
 	let engine: SyncEngine;
 	let vault: ReturnType<typeof createMockVault>;
-	let settings: VectorSettings;
+	let settings: VSyncSettings;
 
 	beforeEach(() => {
 		vi.clearAllMocks();

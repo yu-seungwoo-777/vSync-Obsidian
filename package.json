@@ -1,7 +1,7 @@
 {
-	"name": "@vector/plugin",
+	"name": "@vsync/plugin",
 	"version": "0.1.0",
-	"description": "Vector sync client plugin",
+	"description": "vSync - Vector sync client plugin",
 	"main": "main.js",
 	"scripts": {
 		"dev": "node esbuild.config.mjs",

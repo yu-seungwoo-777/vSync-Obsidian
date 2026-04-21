@@ -1,6 +1,6 @@
 // 동기화 엔진 - 핵심 동기화 로직
 
-import { VectorClient, MAX_BINARY_SIZE } from './api-client';
+import { VSyncClient, MAX_BINARY_SIZE } from './api-client';
 import type { PersistCallback } from './api-client';
 import { ConflictResolver, ConflictQueue } from './conflict';
 import type { ConflictQueueItem } from './conflict';
@@ -8,7 +8,7 @@ import { computeHash } from './utils/hash';
 import { shouldSyncPath, normalizePath, isObsidianPath, isBinaryPath } from './utils/path';
 import { WSClient } from './services/ws-client';
 import { PollingFallback } from './services/polling-fallback';
-import type { VectorSettings, SyncEvent, FileInfo, ConnectionMode, OfflineQueueItem, ConflictResult, DeviceInfo } from './types';
+import type { VSyncSettings, SyncEvent, FileInfo, ConnectionMode, OfflineQueueItem, ConflictResult, DeviceInfo } from './types';
 
 // 다운로드 후 vault modify 이벤트 필터링 유지 시간 (ms)
 const RECENTLY_MODIFIED_TTL_MS = 1000;
@@ -77,12 +77,12 @@ export class RenameDetector {
 }
 
 export class SyncEngine {
-	private _client: VectorClient;
+	private _client: VSyncClient;
 	private _conflict_resolver: ConflictResolver;
 	// @MX:NOTE 충돌 큐 (SPEC-P6-UX-002 REQ-UX-003)
 	private _conflict_queue: ConflictQueue | null;
 	private _vault: VaultAdapter;
-	private _settings: VectorSettings;
+	private _settings: VSyncSettings;
 	private _notice_fn: (msg: string) => void;
 	private _is_syncing = false;
 	private _recently_modified = new Set<string>();
@@ -113,7 +113,7 @@ export class SyncEngine {
 	// @MX:NOTE 리네임 감지기 (REQ-PA-004)
 	private _rename_detector: RenameDetector;
 
-	constructor(settings: VectorSettings, vault: VaultAdapter, noticeFn: (msg: string) => void, persistCallback?: PersistCallback, restoredQueue?: OfflineQueueItem[], conflictQueue?: ConflictQueue) {
+	constructor(settings: VSyncSettings, vault: VaultAdapter, noticeFn: (msg: string) => void, persistCallback?: PersistCallback, restoredQueue?: OfflineQueueItem[], conflictQueue?: ConflictQueue) {
 		this._settings = settings;
 		this._vault = vault;
 		this._notice_fn = noticeFn;
@@ -133,8 +133,8 @@ export class SyncEngine {
 		}
 	}
 
-	private _createClient(settings: VectorSettings): VectorClient {
-		return new VectorClient({
+	private _createClient(settings: VSyncSettings): VSyncClient {
+		return new VSyncClient({
 			server_url: settings.server_url,
 			api_key: settings.api_key,
 			vault_id: settings.vault_id,
@@ -153,7 +153,7 @@ export class SyncEngine {
 	}
 
 	/** 설정 업데이트 (AC-007.1: 서버 URL 등 변경 시 캐시 초기화) */
-	updateSettings(settings: VectorSettings): void {
+	updateSettings(settings: VSyncSettings): void {
 		this._settings = settings;
 		this._client = this._createClient(settings);
 		this._last_event_id = settings.last_event_id || '';

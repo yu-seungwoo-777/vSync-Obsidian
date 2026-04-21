@@ -4,7 +4,7 @@ import { syncLogger } from '../sync-logger';
 import type { LogLevel } from '../sync-logger';
 
 export class SyncLogView extends ItemView {
-	static VIEW_TYPE = 'vector-log';
+	static VIEW_TYPE = 'vsync-log';
 
 	private unsubscribe: (() => void) | null = null;
 	private filter_level: LogLevel | 'all' = 'all';
