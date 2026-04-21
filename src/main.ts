@@ -364,7 +364,7 @@ export default class VSyncPlugin extends Plugin {
 		// REQ-P4-019: 수동 동기화 명령
 		this.addCommand({
 			id: 'vsync-force-sync',
-			name: 'vSync: Force sync',
+			name: 'Force sync',
 			callback: async () => {
 				if (!this._syncEngine) return;
 				this.updateStatus('syncing');
@@ -380,7 +380,7 @@ export default class VSyncPlugin extends Plugin {
 		// REQ-P4-020: 동기화 상태 보기
 		this.addCommand({
 			id: 'vsync-show-status',
-			name: 'vSync: Show sync status',
+			name: 'Show sync status',
 			callback: () => {
 				const status = this._syncEngine?.getStatus() || 'unknown';
 				const mode = this._syncEngine?.getConnectionMode() || 'unknown';
@@ -391,7 +391,7 @@ export default class VSyncPlugin extends Plugin {
 		// @MX:NOTE 충돌 해결 커맨드 (SPEC-P6-UX-002 REQ-UX-009)
 		this.addCommand({
 			id: 'resolve-conflicts',
-			name: 'vSync: Resolve conflicts',
+			name: 'Resolve conflicts',
 			callback: () => {
 				this.activateConflictView();
 			},
@@ -400,7 +400,7 @@ export default class VSyncPlugin extends Plugin {
 		// @MX:NOTE 서버 파일 검색 커맨드 (REQ-PA-013, REQ-PA-014)
 		this.addCommand({
 			id: 'vsync-search',
-			name: 'vSync: Search server files',
+			name: 'Search server files',
 			callback: () => {
 				this._openSearchModal();
 			},
@@ -409,7 +409,7 @@ export default class VSyncPlugin extends Plugin {
 		// 동기화 로그 열기
 		this.addCommand({
 			id: 'vsync-open-log',
-			name: 'vSync: Open sync log',
+			name: 'Open sync log',
 			callback: () => {
 				this._activateLogView();
 			},
