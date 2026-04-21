@@ -20,62 +20,6 @@ const MAX_HASH_CACHE_SIZE = 10000;
 const DEBOUNCE_DELAY_MS = 300;
 
 /** 동기화 엔진 */
-// @MX:NOTE 리네임 감지기: 삭제+생성 500ms 윈도우 + 해시 매칭 (REQ-PA-004)
-// 동일 디렉토리에서 삭제 후 짧은 시간 내 생성 시 리네임으로 간주
-export class RenameDetector {
-	private _pendingDelete: { path: string; hash: string; timestamp: number } | null = null;
-	private readonly _windowMs = 500;
-	private _timer: ReturnType<typeof setTimeout> | null = null;
-	private _noticeFn: (msg: string) => void;
-
-	constructor(noticeFn: (msg: string) => void) {
-		this._noticeFn = noticeFn;
-	}
-
-	/** 삭제 이벤트 등록 */
-	recordDelete(path: string, hash: string): void {
-		this._pendingDelete = { path, hash, timestamp: Date.now() };
-		// 윈도우 만료 후 자동 클리어
-		if (this._timer) clearTimeout(this._timer);
-		this._timer = setTimeout(() => {
-			this._pendingDelete = null;
-		}, this._windowMs);
-	}
-
-	/** 생성 이벤트로 리네임 감지 시도 */
-	detectRename(newPath: string, newHash: string): { from: string; to: string } | null {
-		if (!this._pendingDelete) return null;
-
-		const elapsed = Date.now() - this._pendingDelete.timestamp;
-		if (elapsed > this._windowMs) {
-			this._pendingDelete = null;
-			return null;
-		}
-
-		// 동일 디렉토리 + 동일 해시 → 리네임
-		if (this._pendingDelete.hash === newHash) {
-			const result = { from: this._pendingDelete.path, to: newPath };
-			this._pendingDelete = null;
-			if (this._timer) {
-				clearTimeout(this._timer);
-				this._timer = null;
-			}
-			return result;
-		}
-
-		return null;
-	}
-
-	/** 대기 중인 삭제 이벤트 초기화 */
-	clear(): void {
-		this._pendingDelete = null;
-		if (this._timer) {
-			clearTimeout(this._timer);
-			this._timer = null;
-		}
-	}
-}
-
 export class SyncEngine {
 	private _client: VSyncClient;
 	private _conflict_resolver: ConflictResolver;
@@ -110,9 +54,6 @@ export class SyncEngine {
 
 	private _persist_callback?: PersistCallback;
 
-	// @MX:NOTE 리네임 감지기 (REQ-PA-004)
-	private _rename_detector: RenameDetector;
-
 	constructor(settings: VSyncSettings, vault: VaultAdapter, noticeFn: (msg: string) => void, persistCallback?: PersistCallback, restoredQueue?: OfflineQueueItem[], conflictQueue?: ConflictQueue) {
 		this._settings = settings;
 		this._vault = vault;
@@ -123,7 +64,6 @@ export class SyncEngine {
 		this._conflict_resolver = new ConflictResolver(noticeFn);
 		this._last_event_id = settings.last_event_id || '';
 		this._polling_fallback = new PollingFallback((settings.sync_interval || 30) * 1000);
-		this._rename_detector = new RenameDetector(noticeFn);
 
 		// 해시 캐시: 설정에서 복원 또는 빈 Map (AC-006.2, AC-006.6)
 		this._hash_cache = new Map(Object.entries(settings.hash_cache ?? {}));
@@ -303,34 +243,34 @@ export class SyncEngine {
 	// ============================================================
 
 	/** 로컬 파일 생성 이벤트 처리 */
-	/** 로컬 파일 생성 이벤트 처리 */
 	async handleLocalCreate(file: { path: string }): Promise<void> {
 		const normalizedPath = normalizePath(file.path);
 		if (!shouldSyncPath(normalizedPath)) return;
 
-		// 리네임 감지 시도 (REQ-PA-004)
-		if (!isBinaryPath(normalizedPath)) {
-			const content = await this._vault.readIfExists(normalizedPath);
-			if (content !== null) {
-				const contentHash = await computeHash(content);
-				const rename = this._rename_detector.detectRename(normalizedPath, contentHash);
-				if (rename) {
-					// 리네임 감지됨 → POST /move 호출
-					try {
-						await this._client.moveFile(rename.from, rename.to);
-						this._hash_cache.delete(rename.from);
-						this._updateHashCache(rename.to, contentHash);
-						return;
-					} catch (error) {
-						// /move 실패 → 기존 delete+create로 폴백 (graceful degradation)
-						this._notice_fn(`Move failed, falling back: ${(error as Error).message}`);
-						// 폴백 시 deleteFile은 이미 handleLocalDelete에서 처리됨
-					}
-				}
-			}
-		}
-
 		await this._uploadLocalFile(file.path);
+	}
+
+	/** 로컬 파일 리네임 이벤트 처리 (SPEC-RENAME-FIX-001) */
+	async handleLocalRename(oldPath: string, newPath: string): Promise<void> {
+		const normalizedNewPath = normalizePath(newPath);
+		const normalizedOldPath = normalizePath(oldPath);
+		if (!shouldSyncPath(normalizedNewPath)) return;
+		if (this._is_syncing || this._recently_modified.has(normalizedNewPath)) return;
+		if (!shouldSyncPath(normalizedOldPath)) return;
+
+		try {
+			await this._client.moveFile(oldPath, newPath);
+			// 해시 캐시 이관
+			const oldHash = this._hash_cache.get(normalizedOldPath);
+			if (oldHash) {
+				this._hash_cache.delete(normalizedOldPath);
+				this._updateHashCache(normalizedNewPath, oldHash);
+			}
+		} catch (error) {
+			this._notice_fn(`Rename failed: ${(error as Error).message}`);
+			// Graceful degradation: Obsidian에서 delete+create 이벤트도 발생하므로
+			// 기존 handleLocalDelete + handleLocalCreate 흐름으로 폴백
+		}
 	}
 
 	/** 로컬 파일 수정 이벤트 처리 (REQ-DP-008: 디바운스 적용) */
@@ -358,22 +298,9 @@ export class SyncEngine {
 		if (!shouldSyncPath(path)) return;
 		if (this._is_syncing || this._recently_modified.has(path)) return;
 
-		// 리네임 감지를 위해 삭제 해시 기록 (REQ-PA-004)
-		const normalizedPath = normalizePath(path);
-		let deleteHash = this._hash_cache.get(normalizedPath);
-		if (!deleteHash) {
-			// 캐시 미스 시 파일 내용에서 해시 계산
-			const content = await this._vault.readIfExists(normalizedPath);
-			if (content !== null) {
-				deleteHash = await computeHash(content);
-			}
-		}
-		if (deleteHash) {
-			this._rename_detector.recordDelete(normalizedPath, deleteHash);
-		}
-
 		try {
 			await this._client.deleteFile(path);
+			const normalizedPath = normalizePath(path);
 			this._hash_cache.delete(normalizedPath);
 		} catch (error) {
 			this._notice_fn(`Failed to delete ${path}: ${(error as Error).message}`);
@@ -986,6 +913,7 @@ export class SyncEngine {
 		this._vault.on('create', (file: { path: string }) => this.handleLocalCreate(file));
 		this._vault.on('modify', (file: { path: string }) => this.handleLocalModify(file));
 		this._vault.on('delete', (file: { path: string }) => this.handleLocalDelete(file.path));
+		this._vault.on('rename', (file: { path: string }, oldPath: string) => this.handleLocalRename(oldPath, file.path));
 
 		// 폴링 타이머 등록 (WS 연결 전 기본 폴링)
 		const intervalMs = (this._settings.sync_interval || 30) * 1000;

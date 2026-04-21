@@ -314,6 +314,7 @@ describe('SyncEngine', () => {
 			expect(vault.on).toHaveBeenCalledWith('create', expect.any(Function));
 			expect(vault.on).toHaveBeenCalledWith('modify', expect.any(Function));
 			expect(vault.on).toHaveBeenCalledWith('delete', expect.any(Function));
+			expect(vault.on).toHaveBeenCalledWith('rename', expect.any(Function));
 		});
 	});
 
@@ -1040,70 +1041,64 @@ describe('SyncEngine', () => {
 		// SPEC-P8-PLUGIN-API-001 Cycle 4: 파일 이동 감지 (T-009, T-010, T-011)
 		// ============================================================
 
-		describe('리네임 감지 (REQ-PA-004, T-009)', () => {
-			it('삭제+생성 500ms 이내 + 동일 해시 → POST /move 호출', async () => {
+		describe('handleLocalRename (REQ-RN-001 ~ REQ-RN-005)', () => {
+			it('AC-001: rename 이벤트로 서버 moveFile 호출', async () => {
 				mockApiClient.moveFile.mockResolvedValueOnce({ success: true, from: 'old.md', to: 'new.md' });
-				vi.mocked(computeHash).mockResolvedValue('same-hash');
 
-				// 삭제 이벤트 발생 → renameDetector가 대기
-				vault._textMap.set('notes/old.md', 'same content');
-				await engine.handleLocalDelete('notes/old.md');
-				// 즉시 새 파일 생성 이벤트
-				vault._textMap.set('notes/new.md', 'same content');
-				const file = createMockFile('notes/new.md', 'same content');
-				await engine.handleLocalCreate(file);
+				await (engine as any).handleLocalRename('old.md', 'new.md');
 
-				expect(mockApiClient.moveFile).toHaveBeenCalledWith('notes/old.md', 'notes/new.md');
-				// move 성공 시 delete+create 대신 move 사용
-				expect(mockApiClient.rawUpload).not.toHaveBeenCalled();
+				expect(mockApiClient.moveFile).toHaveBeenCalledWith('old.md', 'new.md');
 			});
 
-			it('해시가 다르면 리네임이 아닌 delete+create 처리', async () => {
-				mockApiClient.deleteFile.mockResolvedValueOnce(undefined);
-				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/new.md', hash: 'h', sizeBytes: 7, version: 1 });
+			it('AC-002: rename 성공 시 해시 캐시 이관', async () => {
+				mockApiClient.moveFile.mockResolvedValueOnce({ success: true, from: 'notes/old.md', to: 'notes/new.md' });
+				const cache = (engine as any)._hash_cache as Map<string, string>;
+				cache.set('notes/old.md', 'hash-abc');
 
-				// 다른 해시
-				vi.mocked(computeHash)
-					.mockResolvedValueOnce('old-hash')
-					.mockResolvedValueOnce('new-hash');
+				await (engine as any).handleLocalRename('notes/old.md', 'notes/new.md');
 
-				await engine.handleLocalDelete('notes/old.md');
-				vault._textMap.set('notes/new.md', 'different content');
-				await engine.handleLocalCreate(createMockFile('notes/new.md', 'different content'));
+				expect(cache.has('notes/old.md')).toBe(false);
+				expect(cache.get('notes/new.md')).toBe('hash-abc');
+			});
+
+			it('AC-003: rename 실패 시 graceful degradation', async () => {
+				mockApiClient.moveFile.mockRejectedValueOnce(new Error('Server error'));
+
+				await (engine as any).handleLocalRename('old.md', 'new.md');
+
+				expect(mockApiClient.moveFile).toHaveBeenCalledWith('old.md', 'new.md');
+				// 에러가 catch되고 notice 호출 - 크래시 없음
+				expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('Rename failed'));
+			});
+
+			it('AC-004: 동기화 대상이 아닌 파일 스킵', async () => {
+				await (engine as any).handleLocalRename('.obsidian/config', '.obsidian/config-new');
 
 				expect(mockApiClient.moveFile).not.toHaveBeenCalled();
-				expect(mockApiClient.deleteFile).toHaveBeenCalled();
 			});
 
-			it('500ms 초과 시 리네임이 아닌 delete+create 처리', async () => {
-				vi.useFakeTimers();
-				mockApiClient.deleteFile.mockResolvedValueOnce(undefined);
-				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/new.md', hash: 'h', sizeBytes: 7, version: 1 });
-				vi.mocked(computeHash).mockResolvedValue('same-hash');
+			it('AC-005: 바이너리 파일 rename 지원', async () => {
+				mockApiClient.moveFile.mockResolvedValueOnce({ success: true, from: 'old.png', to: 'new.png' });
 
-				await engine.handleLocalDelete('notes/old.md');
-				// 600ms 경과
-				await vi.advanceTimersByTimeAsync(600);
-				vault._textMap.set('notes/new.md', 'same content');
-				await engine.handleLocalCreate(createMockFile('notes/new.md', 'same content'));
+				await (engine as any).handleLocalRename('old.png', 'new.png');
+
+				expect(mockApiClient.moveFile).toHaveBeenCalledWith('old.png', 'new.png');
+			});
+
+			it('syncing 중일 때 스킵', async () => {
+				engine.setSyncing(true);
+
+				await (engine as any).handleLocalRename('old.md', 'new.md');
 
 				expect(mockApiClient.moveFile).not.toHaveBeenCalled();
-				vi.useRealTimers();
+
+				engine.setSyncing(false);
 			});
 
-			it('서버 /move 404 → 기존 delete+create로 폴백', async () => {
-				mockApiClient.moveFile.mockRejectedValueOnce(new Error('Not found'));
-				mockApiClient.deleteFile.mockResolvedValueOnce(undefined);
-				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/new.md', hash: 'h', sizeBytes: 7, version: 1 });
-				vi.mocked(computeHash).mockResolvedValue('same-hash');
+			it('oldPath가 동기화 대상이 아니면 스킵', async () => {
+				await (engine as any).handleLocalRename('.obsidian/old.md', 'new.md');
 
-				await engine.handleLocalDelete('notes/old.md');
-				vault._textMap.set('notes/new.md', 'same content');
-				await engine.handleLocalCreate(createMockFile('notes/new.md', 'same content'));
-
-				// move 실패 → delete+create 폴백
-				expect(mockApiClient.deleteFile).toHaveBeenCalled();
-				expect(mockApiClient.rawUpload).toHaveBeenCalled();
+				expect(mockApiClient.moveFile).not.toHaveBeenCalled();
 			});
 		});
 
@@ -1142,18 +1137,13 @@ describe('SyncEngine', () => {
 		});
 
 		describe('이동 충돌 (REQ-PA-006, T-011)', () => {
-			it('POST /move 409 → 충돌 큐에 적재', async () => {
-				const cq = new ConflictQueue();
-				(engine as any)._conflict_queue = cq;
+			it('POST /move 409 → graceful degradation', async () => {
 				mockApiClient.moveFile.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status: 409 }));
-				vi.mocked(computeHash).mockResolvedValue('same-hash');
 
-				await engine.handleLocalDelete('notes/old.md');
-				vault._textMap.set('notes/new.md', 'same content');
-				await engine.handleLocalCreate(createMockFile('notes/new.md', 'same content'));
+				await (engine as any).handleLocalRename('notes/old.md', 'notes/new.md');
 
-				// 409 → graceful degradation (move 실패 후 delete+create)
-				expect(mockApiClient.deleteFile).toHaveBeenCalled();
+				// 409 → graceful degradation: notice 표시 후 Obsidian delete+create 이벤트로 폴백
+				expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('Rename failed'));
 			});
 		});
 
