@@ -1136,6 +1136,34 @@ describe('SyncEngine', () => {
 			});
 		});
 
+		describe('null file_path 이벤트 처리', () => {
+			it('file_path가 null인 이벤트는 스킵해야 한다', async () => {
+				mockApiClient.getEvents.mockResolvedValueOnce([
+					{ id: 'n1', event_type: 'deleted', file_path: null, device_id: 'device-2', created_at: '2026-01-01' },
+				]);
+				mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
+				await engine.pollRemoteChanges();
+
+				// null file_path 이벤트는 크래시 없이 스킵
+				expect(mockApiClient.rawDownload).not.toHaveBeenCalled();
+				expect(vault.delete).not.toHaveBeenCalled();
+			});
+
+			it('moved 이벤트에서 from_path가 없으면 created로 폴백', async () => {
+				mockApiClient.getEvents.mockResolvedValueOnce([
+					{ id: 'm-fb1', event_type: 'moved', file_path: 'notes/fallback.md', device_id: 'device-2', created_at: '2026-01-01' },
+				]);
+				mockApiClient.rawDownload.mockResolvedValueOnce('fallback content');
+				mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+
+				await engine.pollRemoteChanges();
+
+				// from_path 없으면 created로 폴백하여 다운로드
+				expect(mockApiClient.rawDownload).toHaveBeenCalledWith('notes/fallback.md');
+			});
+		});
+
 		describe('이동 충돌 (REQ-PA-006, T-011)', () => {
 			it('POST /move 409 → graceful degradation', async () => {
 				mockApiClient.moveFile.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status: 409 }));

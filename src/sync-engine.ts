@@ -526,6 +526,9 @@ export class SyncEngine {
 		// 자기 자신의 디바이스 이벤트는 무시
 		if (event.device_id === this._settings.device_id) return;
 
+		// file_path가 null인 이벤트는 스킵 (삭제된 파일의 leftJoin 결과)
+		if (!event.file_path) return;
+
 		// .obsidian 경로는 무시
 		if (isObsidianPath(event.file_path)) return;
 
@@ -641,8 +644,11 @@ export class SyncEngine {
 
 	/** moved 이벤트 처리 (REQ-PA-005): 로컬 파일을 새 경로로 이동 */
 	private async _handleMovedEvent(event: SyncEvent): Promise<void> {
-		const fromPath = event.from_path;
+		// @MX:NOTE (event as any).from_path: OpenAPI 타입에 아직 반영되지 않아 캐스트 사용
+		const fromPath = (event as any).from_path as string | undefined;
 		const toPath = event.file_path;
+
+		if (!toPath) return; // 대상 경로 없으면 스킵
 		if (!fromPath) {
 			// from_path 없으면 일반 created로 폴백
 			await this._downloadRemoteFile(toPath);
