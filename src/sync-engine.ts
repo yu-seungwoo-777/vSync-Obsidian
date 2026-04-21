@@ -83,7 +83,7 @@ export class SyncEngine {
 	}
 
 	private _handleFlushFailed(failedItems: OfflineQueueItem[]): void {
-		const paths = failedItems.map((item) => item.file_path).join(', ');
+		const paths = failedItems.map((item) => item.filePath).join(', ');
 		this._notice_fn(`Sync failed after 3 retries: ${paths}`);
 	}
 
@@ -415,7 +415,7 @@ export class SyncEngine {
 					const uploadFile = uploadFiles.find((f) => f.path === item.path);
 					if (uploadFile && item.path) {
 						this._client.enqueue({
-							file_path: item.path,
+							filePath: item.path,
 							content: uploadFile.content,
 							operation: 'upload',
 							timestamp: Date.now(),
@@ -583,7 +583,7 @@ export class SyncEngine {
 						this._conflict_queue.enqueue({
 							id: globalThis.crypto?.randomUUID?.() ?? `conflict-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 							file_path: path,
-							localContent,
+							local_content: localContent,
 							server_content: content,
 							diff: null,
 							base_hash: null,
@@ -850,10 +850,10 @@ export class SyncEngine {
 		}
 
 		this._ws_client = new WSClient({
-			serverUrl: this._settings.server_url,
-			apiKey: this._settings.api_key,
-			vaultId: this._settings.vault_id,
-			deviceId: this._settings.device_id,
+			server_url: this._settings.server_url,
+			api_key: this._settings.api_key,
+			vault_id: this._settings.vault_id,
+			device_id: this._settings.device_id,
 		});
 
 		// WS 이벤트 콜백 → 큐 라우팅 (REQ-EVT-001)

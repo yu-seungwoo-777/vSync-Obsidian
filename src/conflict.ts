@@ -2,6 +2,7 @@
 
 import { computeHash } from './utils/hash';
 import { isConflictFile as checkIsConflictFile } from './utils/path';
+import type { App } from 'obsidian';
 
 // @MX:NOTE 409 응답에서 받은 diff 연산 타입
 export type DiffOperation = {
@@ -202,7 +203,7 @@ export class ConflictResolver {
 		// diff 데이터가 있으면 모달 띄우기
 		return new Promise<ModalChoice>((resolve) => {
 			const modal = new conflictResolveModal(
-				{}, // app placeholder
+				null as unknown as App, // 테스트/비UI 컨텍스트용 app placeholder
 				info.file_path,
 				info.diff as DiffOperation[],
 				(choice: ModalChoice) => {

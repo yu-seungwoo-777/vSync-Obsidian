@@ -1011,7 +1011,7 @@ describe('SyncEngine', () => {
 				expect(cache.get('ok1.md')).toBe('rh1');
 				expect(cache.get('ok2.md')).toBe('rh2');
 				expect(mockApiClient.enqueue).toHaveBeenCalledWith(
-					expect.objectContaining({ file_path: 'fail.md', operation: 'upload' })
+					expect.objectContaining({ filePath: 'fail.md', operation: 'upload' })
 				);
 			});
 

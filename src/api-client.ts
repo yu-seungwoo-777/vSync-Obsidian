@@ -229,11 +229,11 @@ export class VSyncClient {
 			// 네트워크 오류 시 큐에 추가
 			if (this._isNetworkError(error)) {
 				this.enqueue({
-					file_path: path,
+					filePath: path,
 					content,
 					operation: 'upload',
 					timestamp: Date.now(),
-					retry_count: 0,
+					retryCount: 0,
 				});
 			}
 			throw error;
@@ -276,11 +276,11 @@ export class VSyncClient {
 			this._handleError(error);
 			if (this._isNetworkError(error)) {
 				this.enqueue({
-					file_path: path,
+					filePath: path,
 					content: '',
 					operation: 'delete',
 					timestamp: Date.now(),
-					retry_count: 0,
+					retryCount: 0,
 				});
 			}
 			throw error;
@@ -313,11 +313,11 @@ export class VSyncClient {
 			// 네트워크 오류 시 큐에 추가 (ArrayBuffer content)
 			if (this._isNetworkError(error)) {
 				this.enqueue({
-					file_path: path,
+					filePath: path,
 					content: data,
 					operation: 'upload',
 					timestamp: Date.now(),
-					retry_count: 0,
+					retryCount: 0,
 				});
 			}
 			throw error;
@@ -551,7 +551,7 @@ export class VSyncClient {
 	enqueue(item: OfflineQueueItem): void {
 		// @MX:NOTE 동일 filePath 기존 항목 제거 (dedup) (REQ-P6-004)
 		this._offline_queue = this._offline_queue.filter(
-			(existing) => existing.file_path !== item.file_path
+			(existing) => existing.filePath !== item.filePath
 		);
 
 		this._offline_queue.push(item);
@@ -597,12 +597,12 @@ export class VSyncClient {
 				try {
 					if (item.operation === 'upload') {
 						if (item.content instanceof ArrayBuffer) {
-							await this.uploadAttachment(item.file_path, item.content);
+							await this.uploadAttachment(item.filePath, item.content);
 						} else {
-							await this.rawUpload(item.file_path, item.content);
+							await this.rawUpload(item.filePath, item.content);
 						}
 					} else if (item.operation === 'delete') {
-						await this.deleteFile(item.file_path);
+						await this.deleteFile(item.filePath);
 					}
 					this._offline_queue.shift();
 				} catch (error) {
@@ -612,9 +612,9 @@ export class VSyncClient {
 						continue;
 					}
 
-					item.retry_count++;
+					item.retryCount++;
 
-					if (item.retry_count >= MAX_RETRIES) {
+					if (item.retryCount >= MAX_RETRIES) {
 						this._offline_queue.shift();
 						failedItems.push(item);
 						continue;

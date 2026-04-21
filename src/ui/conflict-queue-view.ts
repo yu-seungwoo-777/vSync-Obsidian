@@ -47,7 +47,7 @@ export class ConflictQueueView extends ItemView {
 		}
 
 		// 파일 경로 기준 정렬 (AC-006.2)
-		const sorted = [...items].sort((a, b) => a.filePath.localeCompare(b.filePath));
+		const sorted = [...items].sort((a, b) => a.file_path.localeCompare(b.file_path));
 
 		// 목록 컨테이너
 		const listEl = this.contentEl.createDiv?.({ cls: 'conflict-queue-list' });
@@ -59,7 +59,7 @@ export class ConflictQueueView extends ItemView {
 
 			// 파일 경로 표시
 			itemEl.createDiv?.({
-				text: item.filePath,
+				text: item.file_path,
 				cls: 'conflict-item-path',
 			});
 

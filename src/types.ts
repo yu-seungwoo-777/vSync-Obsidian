@@ -61,6 +61,8 @@ export type BatchOperation = {
 
 export type BatchResultItem = {
 	status: number;
+	path?: string;
+	hash?: string;
 	data?: unknown;
 	error?: string;
 };

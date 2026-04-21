@@ -271,11 +271,11 @@ describe('VSyncClient', () => {
 		it('큐 최대 크기는 100개여야 한다', () => {
 			for (let i = 0; i < 110; i++) {
 				client.enqueue({
-					file_path: `file${i}.md`,
+					filePath: `file${i}.md`,
 					content: 'content',
 					operation: 'upload',
 					timestamp: Date.now(),
-					retry_count: 0,
+					retryCount: 0,
 				});
 			}
 			expect(client.getQueueSize()).toBe(100);
@@ -289,11 +289,11 @@ describe('VSyncClient', () => {
 			);
 
 			client.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			await client.flushQueue();
@@ -427,17 +427,17 @@ describe('VSyncClient', () => {
 			const c = new VSyncClient(baseSettings, persistCallback);
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			expect(persistCallback).toHaveBeenCalledTimes(1);
 			expect(persistCallback).toHaveBeenCalledWith(
 				expect.arrayContaining([
-					expect.objectContaining({ file_path: 'test.md' }),
+					expect.objectContaining({ filePath: 'test.md' }),
 				])
 			);
 		});
@@ -446,11 +446,11 @@ describe('VSyncClient', () => {
 			const c = new VSyncClient(baseSettings);
 			expect(() => {
 				c.enqueue({
-					file_path: 'test.md',
+					filePath: 'test.md',
 					content: 'content',
 					operation: 'upload',
 					timestamp: Date.now(),
-					retry_count: 0,
+					retryCount: 0,
 				});
 			}).not.toThrow();
 		});
@@ -466,11 +466,11 @@ describe('VSyncClient', () => {
 			);
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			persistCallback.mockClear();
@@ -487,19 +487,19 @@ describe('VSyncClient', () => {
 			const c = new VSyncClient(baseSettings, persistCallback);
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'old content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'new content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			expect(c.getQueueSize()).toBe(1);
@@ -514,19 +514,19 @@ describe('VSyncClient', () => {
 			const c = new VSyncClient(baseSettings);
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: '',
 				operation: 'delete',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			expect(c.getQueueSize()).toBe(1);
@@ -536,19 +536,19 @@ describe('VSyncClient', () => {
 			const c = new VSyncClient(baseSettings);
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: '',
 				operation: 'delete',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'new content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			expect(c.getQueueSize()).toBe(1);
@@ -560,22 +560,22 @@ describe('VSyncClient', () => {
 			// 서로 다른 filePath로 100개 채우기
 			for (let i = 0; i < 100; i++) {
 				c.enqueue({
-					file_path: `file${i}.md`,
+					filePath: `file${i}.md`,
 					content: 'content',
 					operation: 'upload',
 					timestamp: Date.now(),
-					retry_count: 0,
+					retryCount: 0,
 				});
 			}
 			expect(c.getQueueSize()).toBe(100);
 
 			// 기존 filePath에 대해 enqueue → dedup 후 여전히 100
 			c.enqueue({
-				file_path: 'file50.md',
+				filePath: 'file50.md',
 				content: 'updated',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 			expect(c.getQueueSize()).toBe(100);
 		});
@@ -594,11 +594,11 @@ describe('VSyncClient', () => {
 			});
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			// 두 번의 동시 flush 시작
@@ -617,11 +617,11 @@ describe('VSyncClient', () => {
 			mockRequestUrl.mockRejectedValueOnce(new Error('Network error'));
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			await c.flushQueue();
@@ -646,11 +646,11 @@ describe('VSyncClient', () => {
 			mockRequestUrl.mockRejectedValue(new Error('Network error'));
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			await c.flushQueue();
@@ -666,11 +666,11 @@ describe('VSyncClient', () => {
 			mockRequestUrl.mockRejectedValue(new Error('Network error'));
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 2, // 이미 2번 실패
+				retryCount: 2, // 이미 2번 실패
 			});
 
 			await c.flushQueue();
@@ -679,7 +679,7 @@ describe('VSyncClient', () => {
 			expect(c.getQueueSize()).toBe(0);
 			expect(onFlushFailed).toHaveBeenCalledWith(
 				expect.arrayContaining([
-					expect.objectContaining({ file_path: 'test.md' }),
+					expect.objectContaining({ filePath: 'test.md' }),
 				])
 			);
 		});
@@ -692,18 +692,18 @@ describe('VSyncClient', () => {
 			mockRequestUrl.mockRejectedValue({ status: 500 });
 
 			c.enqueue({
-				file_path: 'a.md',
+				filePath: 'a.md',
 				content: 'content-a',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 			c.enqueue({
-				file_path: 'b.md',
+				filePath: 'b.md',
 				content: 'content-b',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			await c.flushQueue();
@@ -711,8 +711,8 @@ describe('VSyncClient', () => {
 			expect(onFlushFailed).toHaveBeenCalledTimes(1);
 			expect(onFlushFailed).toHaveBeenCalledWith(
 				expect.arrayContaining([
-					expect.objectContaining({ file_path: 'a.md' }),
-					expect.objectContaining({ file_path: 'b.md' }),
+					expect.objectContaining({ filePath: 'a.md' }),
+					expect.objectContaining({ filePath: 'b.md' }),
 				])
 			);
 			expect(c.getQueueSize()).toBe(0);
@@ -725,18 +725,18 @@ describe('VSyncClient', () => {
 
 			c.restoreQueue([
 				{
-					file_path: 'restored.md',
+					filePath: 'restored.md',
 					content: 'restored content',
 					operation: 'upload',
 					timestamp: Date.now(),
-					retry_count: 0,
+					retryCount: 0,
 				},
 				{
-					file_path: 'deleted.md',
+					filePath: 'deleted.md',
 					content: '',
 					operation: 'delete',
 					timestamp: Date.now(),
-					retry_count: 1,
+					retryCount: 1,
 				},
 			]);
 
@@ -747,11 +747,11 @@ describe('VSyncClient', () => {
 			const c = new VSyncClient(baseSettings);
 
 			c.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: 'content',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			c.restoreQueue([]);
@@ -770,11 +770,11 @@ describe('VSyncClient', () => {
 			);
 
 			client.enqueue({
-				file_path: 'photo.png',
+				filePath: 'photo.png',
 				content: binaryData,
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			await client.flushQueue();
@@ -796,11 +796,11 @@ describe('VSyncClient', () => {
 			);
 
 			client.enqueue({
-				file_path: 'test.md',
+				filePath: 'test.md',
 				content: '# Hello',
 				operation: 'upload',
 				timestamp: Date.now(),
-				retry_count: 0,
+				retryCount: 0,
 			});
 
 			await client.flushQueue();
