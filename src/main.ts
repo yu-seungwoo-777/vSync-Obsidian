@@ -16,9 +16,19 @@ import { FileNotFoundError, VaultReadError, VaultWriteError } from './errors';
 import { validateVaultPath } from './utils/path';
 import { syncLogger } from './sync-logger';
 
+// @MX:NOTE SPEC-WORKSPACE-ADAPTER-001: Workspace/UI API 추상화 인터페이스
+// VaultAdapter가 파일 I/O를 추상화하는 것처럼, WorkspaceAdapter는 UI/Workspace API를 추상화
+export interface WorkspaceAdapter {
+	onLayoutReady(callback: () => void): void;
+	openFile(filePath: string): Promise<void>;
+	getLeavesOfType(viewType: string): Array<{ detach: () => void }>;
+	openViewInRightLeaf(viewType: string): Promise<void>;
+}
+
 export default class VSyncPlugin extends Plugin {
 	settings: VSyncSettings = { ...DEFAULT_SETTINGS };
 	private _syncEngine: SyncEngine | null = null;
+	private _workspaceAdapter: WorkspaceAdapter | null = null;
 	private _statusBarItem: { setText: (text: string) => void; setAttr: (attr: string, value: string) => void; _lastText?: string; hide?: () => void; show?: () => void } | null = null;
 
 	// @MX:NOTE 충돌 큐 (SPEC-P6-UX-002 REQ-UX-003)
@@ -43,6 +53,9 @@ export default class VSyncPlugin extends Plugin {
 
 		// Vault 어댑터 생성
 		const vaultAdapter = this._createVaultAdapter();
+
+		// @MX:NOTE SPEC-WORKSPACE-ADAPTER-001: Workspace 어댑터 생성 (REQ-WA-001)
+		this._workspaceAdapter = this._createWorkspaceAdapter();
 
 		// @MX:NOTE 오프라인 큐 복원 (SPEC-P6-PERSIST-004 REQ-P6-002)
 		const rawQueue = this._parseQueueData(savedData);
@@ -112,7 +125,7 @@ export default class VSyncPlugin extends Plugin {
 		// @MX:NOTE SPEC-OBSIDIAN-API-GAP-001 REQ-API-001: onLayoutReady 래핑
 		// vault 로드 중 기존 파일의 create 이벤트가 트리거되는 것을 방지
 		if (this._isConfigured()) {
-			this.app.workspace.onLayoutReady(() => {
+			this._workspaceAdapter!.onLayoutReady(() => {
 				this._startSync();
 
 				// @MX:NOTE 큐에 복원된 항목이 있으면 flush 시도 (SPEC-P6-PERSIST-004 REQ-P6-002)
@@ -146,17 +159,12 @@ export default class VSyncPlugin extends Plugin {
 
 	/** 동기화 로그 뷰 열기 */
 	private async _activateLogView(): Promise<void> {
-		const leaves = this.app.workspace.getLeavesOfType(SyncLogView.VIEW_TYPE);
+		// @MX:NOTE SPEC-WORKSPACE-ADAPTER-001 REQ-WA-003, REQ-WA-004: 어댑터로 호출
+		const leaves = this._workspaceAdapter!.getLeavesOfType(SyncLogView.VIEW_TYPE);
 		if (leaves.length > 0) {
 			(leaves[0] as any).setEphemeralState?.({ focus: true }); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian WorkspaceLeaf.setEphemeralState 미노출
 		} else {
-			const rightLeaf = (this.app.workspace as any).getRightLeaf?.(false); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian Workspace.getRightLeaf 미노출
-			if (rightLeaf) {
-				await rightLeaf.setViewState({
-					type: SyncLogView.VIEW_TYPE,
-					active: true,
-				});
-			}
+			await this._workspaceAdapter!.openViewInRightLeaf(SyncLogView.VIEW_TYPE);
 		}
 	}
 
@@ -428,20 +436,13 @@ export default class VSyncPlugin extends Plugin {
 			return;
 		}
 
-		// 사이드 패널에 뷰 열기
-		const leaves = this.app.workspace.getLeavesOfType(ConflictQueueView.VIEW_TYPE);
+		// @MX:NOTE SPEC-WORKSPACE-ADAPTER-001 REQ-WA-003, REQ-WA-004: 어댑터로 호출
+		const leaves = this._workspaceAdapter!.getLeavesOfType(ConflictQueueView.VIEW_TYPE);
 		if (leaves.length > 0) {
 			// 이미 열려있으면 포커스
 			(leaves[0] as any).setEphemeralState?.({ focus: true }); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian WorkspaceLeaf.setEphemeralState 미노출
 		} else {
-			// 오른쪽 사이드바에 열기
-			const rightLeaf = (this.app.workspace as any).getRightLeaf?.(false); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian Workspace.getRightLeaf 미노출
-			if (rightLeaf) {
-				await rightLeaf.setViewState({
-					type: ConflictQueueView.VIEW_TYPE,
-					active: true,
-				});
-			}
+			await this._workspaceAdapter!.openViewInRightLeaf(ConflictQueueView.VIEW_TYPE);
 		}
 	}
 
@@ -484,15 +485,13 @@ export default class VSyncPlugin extends Plugin {
 	 */
 	private async _openFileFromSearch(filePath: string): Promise<void> {
 		try {
-			const file = this.app.vault.getAbstractFileByPath(filePath);
-			if (file) {
-				// 기존 탭에서 파일 열기
-				await (this.app.workspace as any).getLeaf(false)?.openFile(file); // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian Workspace.getLeaf 타입 제약
-			} else {
-				new Notice(`파일을 찾을 수 없습니다: ${filePath}`);
-			}
+			// @MX:NOTE SPEC-WORKSPACE-ADAPTER-001 REQ-WA-005: 어댑터로 파일 열기
+			await this._workspaceAdapter!.openFile(filePath);
 		} catch (error) {
-			new Notice(`파일 열기 실패: ${(error as Error).message}`);
+			// FileNotFoundError는 Notice로 처리 (어댑터 내부에서 처리)
+			if (!(error instanceof FileNotFoundError)) {
+				new Notice(`파일 열기 실패: ${(error as Error).message}`);
+			}
 		}
 	}
 
@@ -549,6 +548,47 @@ export default class VSyncPlugin extends Plugin {
 		}
 		return valid;
 	}
+
+	// @MX:NOTE SPEC-WORKSPACE-ADAPTER-001 REQ-WA-001: Workspace 어댑터 팩토리
+	/* eslint-disable @typescript-eslint/no-explicit-any -- Obsidian Workspace API 타입 제약 */
+	private _createWorkspaceAdapter(): WorkspaceAdapter {
+		const workspace = this.app.workspace;
+		const vault = this.app.vault;
+		return {
+			/// @MX:ANCHOR WorkspaceAdapter.onLayoutReady - 레이아웃 준비 시 콜백 실행 (REQ-WA-002)
+			/// @MX:REASON: [AUTO] Obsidian workspace 초기화 타이밍 제어
+			onLayoutReady(callback: () => void): void {
+				workspace.onLayoutReady(callback);
+			},
+			/// @MX:ANCHOR WorkspaceAdapter.getLeavesOfType - 뷰 타입별 리프 조회 (REQ-WA-003)
+			/// @MX:REASON: [AUTO] UI 리프 탐색 추상화
+			getLeavesOfType(viewType: string): Array<{ detach: () => void }> {
+				return workspace.getLeavesOfType(viewType);
+			},
+			/// @MX:ANCHOR WorkspaceAdapter.openViewInRightLeaf - 오른쪽 사이드바에 뷰 열기 (REQ-WA-004)
+			/// @MX:REASON: [AUTO] getRightLeaf + setViewState 캡슐화
+			async openViewInRightLeaf(viewType: string): Promise<void> {
+				const rightLeaf = (workspace as any).getRightLeaf?.(false);
+				if (rightLeaf) {
+					await rightLeaf.setViewState({
+						type: viewType,
+						active: true,
+					});
+				}
+			},
+			/// @MX:ANCHOR WorkspaceAdapter.openFile - 파일 경로로 파일 열기 (REQ-WA-005)
+			/// @MX:REASON: [AUTO] getAbstractFileByPath + getLeaf + openFile 통합 추상화
+			async openFile(filePath: string): Promise<void> {
+				const file = vault.getAbstractFileByPath(filePath);
+				if (file) {
+					await (workspace as any).getLeaf(false)?.openFile(file);
+				} else {
+					new Notice(`파일을 찾을 수 없습니다: ${filePath}`);
+				}
+			},
+		};
+	}
+	/* eslint-enable @typescript-eslint/no-explicit-any */
 
 	/** Vault 어댑터 생성 (SPEC-P6-RELIABLE-005) */
 	/* eslint-disable @typescript-eslint/no-explicit-any -- Obsidian Vault API가 TAbstractFile을 반환하나 read/modify/delete는 TFile 요구 */

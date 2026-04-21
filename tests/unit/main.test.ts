@@ -824,5 +824,102 @@ describe('VSyncPlugin', () => {
 			});
 		});
 
+		// ============================================================
+		// SPEC-WORKSPACE-ADAPTER-001: WorkspaceAdapter 인터페이스
+		// ============================================================
+
+		describe('SPEC-WORKSPACE-ADAPTER-001: WorkspaceAdapter', () => {
+			describe('onLayoutReady (REQ-WA-002)', () => {
+				it('설정 구성 시 onLayoutReady가 호출되어야 한다', async () => {
+					plugin.loadData = vi.fn().mockResolvedValue({
+						server_url: 'https://example.com',
+						api_key: 'test-key',
+						vault_id: 'vault-1',
+					});
+					plugin.app.workspace.onLayoutReady = vi.fn();
+
+					await plugin.onload();
+
+					expect(plugin.app.workspace.onLayoutReady).toHaveBeenCalled();
+				});
+			});
+
+			describe('getLeavesOfType (REQ-WA-003)', () => {
+				it('어댑터의 getLeavesOfType이 workspace를 호출해야 한다', async () => {
+					const mockLeaves = [{ detach: vi.fn() }];
+					plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue(mockLeaves);
+
+					await plugin.onload();
+					await (plugin as any)._activateLogView();
+
+					expect(plugin.app.workspace.getLeavesOfType).toHaveBeenCalled();
+				});
+			});
+
+			describe('openViewInRightLeaf (REQ-WA-004)', () => {
+				it('뷰가 없으면 getRightLeaf로 새 리프를 열어야 한다', async () => {
+					const mockLeaf = {
+						setViewState: vi.fn().mockResolvedValue(undefined),
+					};
+					plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+					(plugin.app.workspace as any).getRightLeaf = vi.fn().mockReturnValue(mockLeaf);
+
+					await plugin.onload();
+					await (plugin as any)._activateLogView();
+
+					expect((plugin.app.workspace as any).getRightLeaf).toHaveBeenCalledWith(false);
+					expect(mockLeaf.setViewState).toHaveBeenCalledWith(
+						expect.objectContaining({ active: true })
+					);
+				});
+
+				it('getRightLeaf가 null이면 예외 없이 종료되어야 한다', async () => {
+					plugin.app.workspace.getLeavesOfType = vi.fn().mockReturnValue([]);
+					(plugin.app.workspace as any).getRightLeaf = vi.fn().mockReturnValue(null);
+
+					await plugin.onload();
+
+					await expect((plugin as any)._activateLogView()).resolves.toBeUndefined();
+				});
+			});
+
+			describe('openFile (REQ-WA-005)', () => {
+				it('파일이 존재하면 getLeaf + openFile으로 열어야 한다', async () => {
+					const mockFile = { path: 'test.md' };
+					const mockLeaf = { openFile: vi.fn().mockResolvedValue(undefined) };
+					plugin.app.vault.getAbstractFileByPath = vi.fn().mockReturnValue(mockFile);
+					(plugin.app.workspace as any).getLeaf = vi.fn().mockReturnValue(mockLeaf);
+
+					await plugin.onload();
+					await (plugin as any)._openFileFromSearch('test.md');
+
+					expect(plugin.app.vault.getAbstractFileByPath).toHaveBeenCalledWith('test.md');
+					expect((plugin.app.workspace as any).getLeaf).toHaveBeenCalledWith(false);
+					expect(mockLeaf.openFile).toHaveBeenCalledWith(mockFile);
+				});
+
+				it('파일이 없으면 Notice를 표시해야 한다', async () => {
+					const { Notice } = await import('../mocks/obsidian');
+					(Notice as ReturnType<typeof vi.fn>).mockClear();
+					plugin.app.vault.getAbstractFileByPath = vi.fn().mockReturnValue(null);
+
+					await plugin.onload();
+					await (plugin as any)._openFileFromSearch('missing.md');
+
+					expect(Notice).toHaveBeenCalledWith(expect.stringContaining('파일을 찾을 수 없습니다'));
+				});
+
+				it('getLeaf이 null이면 예외 없이 종료되어야 한다', async () => {
+					const mockFile = { path: 'test.md' };
+					plugin.app.vault.getAbstractFileByPath = vi.fn().mockReturnValue(mockFile);
+					(plugin.app.workspace as any).getLeaf = vi.fn().mockReturnValue(null);
+
+					await plugin.onload();
+
+					await expect((plugin as any)._openFileFromSearch('test.md')).resolves.toBeUndefined();
+				});
+			});
+		});
+
 	});
 	});

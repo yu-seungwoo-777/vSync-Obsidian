@@ -97,6 +97,9 @@ export class Plugin {
 			// SPEC-OBSIDIAN-API-GAP-001 REQ-API-001: onLayoutReady mock
 			// 기본 동작: 콜백을 즉시 실행 (테스트에서 개별적으로 오버라이드 가능)
 			onLayoutReady: vi.fn().mockImplementation((cb: () => void) => cb()),
+			// SPEC-WORKSPACE-ADAPTER-001: getRightLeaf, getLeaf mock
+			getRightLeaf: vi.fn().mockReturnValue(null),
+			getLeaf: vi.fn().mockReturnValue(null),
 		},
 	};
 	manifest = { id: 'vector', name: 'Vector', version: '0.1.0' };
