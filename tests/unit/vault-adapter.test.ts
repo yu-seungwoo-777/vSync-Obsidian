@@ -52,6 +52,7 @@ function createTestVault() {
 			}),
 			createFolder: vi.fn(async () => {}),
 			delete: vi.fn(async () => {}),
+			trash: vi.fn(async () => {}),
 			getFiles: vi.fn(() => {
 				return [...files.keys(), ...binaryFiles.keys()].map(path => ({ path }));
 			}),
@@ -120,7 +121,11 @@ function createVaultAdapter(vault: ReturnType<typeof createTestVault>['vault'], 
 			const validatedPath = validateVaultPath(path);
 			const file = vault.getAbstractFileByPath(validatedPath);
 			if (file) {
-				await vault.delete(file);
+				if (typeof (vault as any).trash === 'function') {
+					await (vault as any).trash(file, true);
+				} else {
+					await vault.delete(file);
+				}
 			}
 		},
 

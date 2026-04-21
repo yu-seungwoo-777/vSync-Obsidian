@@ -109,14 +109,17 @@ export default class VSyncPlugin extends Plugin {
 			this._activateLogView();
 		});
 
-		// 설정이 구성된 경우에만 자동 동기화 시작
+		// @MX:NOTE SPEC-OBSIDIAN-API-GAP-001 REQ-API-001: onLayoutReady 래핑
+		// vault 로드 중 기존 파일의 create 이벤트가 트리거되는 것을 방지
 		if (this._isConfigured()) {
-			this._startSync();
+			this.app.workspace.onLayoutReady(() => {
+				this._startSync();
 
-			// @MX:NOTE 큐에 복원된 항목이 있으면 flush 시도 (SPEC-P6-PERSIST-004 REQ-P6-002)
-			if (restoredQueue.length > 0) {
-				this._syncEngine.flushOfflineQueue();
-			}
+				// @MX:NOTE 큐에 복원된 항목이 있으면 flush 시도 (SPEC-P6-PERSIST-004 REQ-P6-002)
+				if (restoredQueue.length > 0) {
+					this._syncEngine?.flushOfflineQueue();
+				}
+			});
 		} else {
 			this.updateStatus('not_configured');
 		}
@@ -551,6 +554,7 @@ export default class VSyncPlugin extends Plugin {
 	/* eslint-disable @typescript-eslint/no-explicit-any -- Obsidian Vault API가 TAbstractFile을 반환하나 read/modify/delete는 TFile 요구 */
 	private _createVaultAdapter(): VaultAdapter {
 		const vault = this.app.vault;
+		const app = this.app;
 		return {
 			/// @MX:ANCHOR VaultAdapter.read - 누락 파일 시 FileNotFoundError throw (SPEC-P6-RELIABLE-005 AC-001.1)
 			async read(path: string): Promise<string> {
@@ -609,13 +613,19 @@ export default class VSyncPlugin extends Plugin {
 					throw new VaultWriteError(validatedPath, error instanceof Error ? error : undefined);
 				}
 			},
+			// @MX:NOTE SPEC-OBSIDIAN-API-GAP-001 REQ-API-004: vault.trash 우선, 폴백 vault.delete
 			async delete(path: string): Promise<void> {
 				// AC-006.6: 경로 검증
 				const validatedPath = validateVaultPath(path);
 
 				const file = vault.getAbstractFileByPath(validatedPath);
 				if (file) {
-					await vault.delete(file as any);
+					// vault.trash(file, true) 우선 사용 → 시스템 휴지통으로 복구 가능 삭제
+					if (typeof (vault as any).trash === 'function') {
+						await (vault as any).trash(file, true);
+					} else {
+						await vault.delete(file as any);
+					}
 				}
 			},
 			getFiles(): Array<{ path: string }> {
@@ -661,6 +671,54 @@ export default class VSyncPlugin extends Plugin {
 						}
 					}
 					await vault.createBinary(validatedPath, data);
+				}
+			},
+			// @MX:NOTE SPEC-OBSIDIAN-API-GAP-001 REQ-API-002: fileManager.renameFile - wiki link 보존
+			async renameFile(oldPath: string, newPath: string): Promise<void> {
+				const validatedPath = validateVaultPath(oldPath);
+				const file = vault.getAbstractFileByPath(validatedPath);
+				if (!file) return; // 파일 없으면 무시
+				// fileManager.renameFile 우선 사용 → wiki link 자동 갱신
+				if (app?.fileManager && typeof app.fileManager.renameFile === 'function') {
+					await app.fileManager.renameFile(file, newPath);
+				} else if (typeof vault.rename === 'function') {
+					// 폴백: vault.rename 사용
+					await vault.rename(file as any, newPath);
+				}
+			},
+			// @MX:NOTE SPEC-OBSIDIAN-API-GAP-001 REQ-API-003: vault.process - 원자적 read-modify-write
+			async process(path: string, fn: (content: string) => string | null): Promise<string | null> {
+				const validatedPath = validateVaultPath(path);
+				const file = vault.getAbstractFileByPath(validatedPath);
+				if (!file) return null; // 파일 없으면 null 반환
+				// vault.process 우선 사용 → 원자적 연산
+				if (typeof (vault as any).process === 'function') {
+					return await (vault as any).process(file, fn);
+				} else {
+					// 폴백: read + modify 수동 처리
+					const content = await vault.read(file as any);
+					const newContent = fn(content);
+					if (newContent !== null) {
+						await vault.modify(file as any, newContent);
+					}
+					return newContent;
+				}
+			},
+			// @MX:NOTE SPEC-OBSIDIAN-API-GAP-001 REQ-API-005: vault.cachedRead - 캐시 우선 읽기
+			async cachedRead(path: string): Promise<string | null> {
+				const validatedPath = validateVaultPath(path);
+				const file = vault.getAbstractFileByPath(validatedPath);
+				if (!file) return null;
+				try {
+					// vault.cachedRead 우선 사용 → 메타데이터 캐시 활용
+					if (typeof (vault as any).cachedRead === 'function') {
+						return await (vault as any).cachedRead(file);
+					} else {
+						// 폴백: vault.read 사용
+						return await vault.read(file as any);
+					}
+				} catch {
+					return null;
 				}
 			},
 		};

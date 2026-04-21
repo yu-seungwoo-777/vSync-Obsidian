@@ -66,6 +66,34 @@ export function createMockVault(
 			textMap.delete(path);
 			binaryMap.delete(path);
 		}),
+		// SPEC-OBSIDIAN-API-GAP-001 REQ-API-004: vault.trash mock (delete와 동일한 동작)
+		trash: vi.fn().mockImplementation(async (pathOrFile: string | MockTFile, _system: boolean) => {
+			const path = typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.path;
+			textMap.delete(path);
+			binaryMap.delete(path);
+		}),
+		// SPEC-OBSIDIAN-API-GAP-001 REQ-API-003: vault.process mock
+		process: vi.fn().mockImplementation(async (file: MockTFile, fn: (data: string) => string | null) => {
+			const content = textMap.get(file.path) ?? '';
+			const result = fn(content);
+			if (result !== null) {
+				textMap.set(file.path, result);
+			}
+			return result;
+		}),
+		// SPEC-OBSIDIAN-API-GAP-001 REQ-API-005: vault.cachedRead mock
+		cachedRead: vi.fn().mockImplementation(async (pathOrFile: string | MockTFile) => {
+			const path = typeof pathOrFile === 'string' ? pathOrFile : pathOrFile.path;
+			return textMap.get(path) ?? '';
+		}),
+		// SPEC-OBSIDIAN-API-GAP-001 REQ-API-002: fileManager.renameFile 지원용
+		renameFile: vi.fn().mockImplementation(async (oldPath: string, newPath: string) => {
+			const content = textMap.get(oldPath);
+			if (content !== undefined) {
+				textMap.delete(oldPath);
+				textMap.set(newPath, content);
+			}
+		}),
 		rename: vi.fn().mockImplementation(async (file: MockTFile, newPath: string) => {
 			const content = textMap.get(file.path);
 			if (content !== undefined) {

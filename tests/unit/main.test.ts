@@ -303,17 +303,19 @@ describe('VSyncPlugin', () => {
 		it('Vault 어댑터의 delete가 파일을 삭제해야 한다', async () => {
 			const mockFile = { path: 'delete.md' };
 			plugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
-			plugin.app.vault.delete.mockResolvedValue(undefined);
+			(plugin.app.vault as any).trash = vi.fn().mockResolvedValue(undefined);
 			await plugin.onload();
 			await capturedVaultAdapter.delete('delete.md');
-			expect(plugin.app.vault.delete).toHaveBeenCalledWith(mockFile);
+			// SPEC-OBSIDIAN-API-GAP-001 REQ-API-004: trash 우선 사용
+			expect((plugin.app.vault as any).trash).toHaveBeenCalledWith(mockFile, true);
 		});
 
 		it('Vault 어댑터의 delete가 없는 파일에 대해 아무것도 하지 않아야 한다', async () => {
 			plugin.app.vault.getAbstractFileByPath.mockReturnValue(null);
+			(plugin.app.vault as any).trash = vi.fn().mockResolvedValue(undefined);
 			await plugin.onload();
 			await capturedVaultAdapter.delete('missing.md');
-			expect(plugin.app.vault.delete).not.toHaveBeenCalled();
+			expect((plugin.app.vault as any).trash).not.toHaveBeenCalled();
 		});
 
 		it('Vault 어댑터의 getFiles가 파일 목록을 반환해야 한다', async () => {

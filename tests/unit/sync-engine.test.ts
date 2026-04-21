@@ -1114,8 +1114,8 @@ describe('SyncEngine', () => {
 				await engine.pollRemoteChanges();
 
 				expect(vault.readIfExists).toHaveBeenCalledWith('notes/old.md');
-				expect(vault.write).toHaveBeenCalledWith('notes/new.md', 'content');
-				expect(vault.delete).toHaveBeenCalledWith('notes/old.md');
+				// SPEC-OBSIDIAN-API-GAP-001 REQ-API-002: renameFile 사용으로 변경
+				expect(vault.renameFile).toHaveBeenCalledWith('notes/old.md', 'notes/new.md');
 			});
 
 			it('moved 이벤트: 대상 경로에 파일 존재 → 충돌 큐', async () => {

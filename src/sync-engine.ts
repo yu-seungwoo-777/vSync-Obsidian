@@ -676,13 +676,22 @@ export class SyncEngine {
 			return;
 		}
 
+		// @MX:NOTE SPEC-OBSIDIAN-API-GAP-001 REQ-API-002: renameFile 사용으로 wiki link 보존
 		// 기존 경로에서 파일 읽기
 		const content = await this._vault.readIfExists(fromPath);
 		if (content !== null) {
-			// 새 경로에 쓰기
-			await this._vault.write(toPath, content);
-			// 기존 경로 삭제
-			await this._vault.delete(fromPath).catch(() => {});
+			// renameFile 우선 사용 → wiki link 자동 갱신, 폴백 시 write+delete
+			if (typeof this._vault.renameFile === 'function') {
+				await this._vault.renameFile(fromPath, toPath).catch(async () => {
+					// renameFile 실패 시 기존 write+delete로 폴백
+					await this._vault.write(toPath, content);
+					await this._vault.delete(fromPath).catch(() => {});
+				});
+			} else {
+				// renameFile 없으면 기존 write+delete 사용
+				await this._vault.write(toPath, content);
+				await this._vault.delete(fromPath).catch(() => {});
+			}
 			// 캐시 업데이트
 			this._hash_cache.delete(fromPath);
 		}
@@ -996,4 +1005,10 @@ export interface VaultAdapter {
 	readBinary(path: string): Promise<ArrayBuffer>;
 	readBinaryIfExists(path: string): Promise<ArrayBuffer | null>;
 	writeBinary(path: string, data: ArrayBuffer): Promise<void>;
+	// REQ-API-002: fileManager.renameFile - wiki link 보존
+	renameFile(oldPath: string, newPath: string): Promise<void>;
+	// REQ-API-003: vault.process - 원자적 read-modify-write
+	process(path: string, fn: (content: string) => string | null): Promise<string | null>;
+	// REQ-API-005: vault.cachedRead - 캐시 우선 읽기
+	cachedRead(path: string): Promise<string | null>;
 }
