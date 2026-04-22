@@ -30,9 +30,11 @@ export class SyncEngine {
 	private _settings: VSyncSettings;
 	private _notice_fn: (msg: string) => void;
 	private _is_syncing = false;
+	// @MX:NOTE 동기화 일시정지 상태 (pause: 이벤트 무시 + 폴링 중단, WS 연결은 유지)
+	private _paused = false;
 	private _recently_modified = new Set<string>();
 	private _last_event_id = '';
-	private _status: 'idle' | 'syncing' | 'error' | 'not_configured' = 'idle';
+	private _status: 'idle' | 'syncing' | 'error' | 'not_configured' | 'paused' = 'idle';
 
 	// @MX:NOTE 듀얼 모드 상태 (SPEC-P3-REALTIME-001)
 	private _connection_mode: ConnectionMode = 'polling';
@@ -77,9 +79,9 @@ export class SyncEngine {
 	private _createClient(settings: VSyncSettings): VSyncClient {
 		return new VSyncClient({
 			server_url: settings.server_url,
-			api_key: settings.api_key,
 			vault_id: settings.vault_id,
 			device_id: settings.device_id,
+			session_token: settings.session_token,
 		}, this._persist_callback, (failedItems) => this._handleFlushFailed(failedItems));
 	}
 
@@ -224,6 +226,39 @@ export class SyncEngine {
 		return this._status;
 	}
 
+	/** 동기화 일시정지 여부 반환 */
+	get isPaused(): boolean {
+		return this._paused;
+	}
+
+	/** 동기화 일시정지 - 이벤트 핸들러는 동작 유지하나 _paused 체크로 무시, WS 연결은 유지 */
+	pause(): void {
+		this._paused = true;
+		this._status = 'paused';
+		// 대기 중인 디바운스 타이머 모두 취소
+		for (const timer of this._pending_uploads.values()) {
+			clearTimeout(timer);
+		}
+		this._pending_uploads.clear();
+		// 폴링 타이머 중단 (WS 연결은 유지하여 재개 시 빠른 동기화)
+		this._polling_fallback.deactivate();
+		this._emitStatus('paused', this._connection_mode);
+	}
+
+	/** 동기화 재개 - 일시정지 중 놓친 변경 즉시 폴링 */
+	resume(): void {
+		if (!this._paused) return;
+		this._paused = false;
+		this._status = 'idle';
+		// 폴링 재활성화
+		if (this._connection_mode === 'polling') {
+			this._polling_fallback.activate(() => this.pollRemoteChanges());
+		}
+		this._emitStatus('idle', this._connection_mode);
+		// 일시정지 중 놓친 변경 즉시 폴링
+		this.pollRemoteChanges();
+	}
+
 	/** 현재 연결 모드 반환 */
 	getConnectionMode(): ConnectionMode {
 		return this._connection_mode;
@@ -245,6 +280,7 @@ export class SyncEngine {
 
 	/** 로컬 파일 생성 이벤트 처리 */
 	async handleLocalCreate(file: { path: string }): Promise<void> {
+		if (this._paused) return;
 		const normalizedPath = normalizePath(file.path);
 		if (!shouldSyncPath(normalizedPath)) return;
 
@@ -253,6 +289,7 @@ export class SyncEngine {
 
 	/** 로컬 파일 리네임 이벤트 처리 (SPEC-RENAME-FIX-001) */
 	async handleLocalRename(oldPath: string, newPath: string): Promise<void> {
+		if (this._paused) return;
 		const normalizedNewPath = normalizePath(newPath);
 		const normalizedOldPath = normalizePath(oldPath);
 		if (!shouldSyncPath(normalizedNewPath)) return;
@@ -276,6 +313,7 @@ export class SyncEngine {
 
 	/** 로컬 파일 수정 이벤트 처리 (REQ-DP-008: 디바운스 적용) */
 	async handleLocalModify(file: { path: string }): Promise<void> {
+		if (this._paused) return;
 		if (!shouldSyncPath(file.path)) return;
 		if (this._is_syncing || this._recently_modified.has(file.path)) return;
 
@@ -296,6 +334,7 @@ export class SyncEngine {
 
 	/** 로컬 파일 삭제 이벤트 처리 (AC-007.3: 삭제 시 캐시 엔트리 제거) */
 	async handleLocalDelete(path: string): Promise<void> {
+		if (this._paused) return;
 		if (!shouldSyncPath(path)) return;
 		if (this._is_syncing || this._recently_modified.has(path)) return;
 
@@ -504,7 +543,7 @@ export class SyncEngine {
 
 	/** 원격 변경 폴링 */
 	async pollRemoteChanges(): Promise<void> {
-		if (this._is_syncing) return;
+		if (this._paused || this._is_syncing) return;
 
 		try {
 			this._is_syncing = true;
@@ -704,7 +743,7 @@ export class SyncEngine {
 
 	/** 초기 전체 동기화 */
 	async performInitialSync(): Promise<void> {
-		if (this._is_syncing) return;
+		if (this._paused || this._is_syncing) return;
 
 		try {
 			this._is_syncing = true;
@@ -861,7 +900,7 @@ export class SyncEngine {
 
 		this._ws_client = new WSClient({
 			server_url: this._settings.server_url,
-			api_key: this._settings.api_key,
+			session_token: this._settings.session_token,
 			vault_id: this._settings.vault_id,
 			device_id: this._settings.device_id,
 		});
@@ -879,16 +918,22 @@ export class SyncEngine {
 				// 갭 체크: WS 재연결 시 놓친 이벤트 폴링
 				this.pollRemoteChanges();
 				// @MX:NOTE 네트워크 복구 시 오프라인 큐 flush (SPEC-P6-PERSIST-004 REQ-P6-008)
-				this.flushOfflineQueue();
-				this._emitStatus('idle', 'realtime');
+				if (!this._paused) {
+					this.flushOfflineQueue();
+				}
+				this._emitStatus(this._paused ? 'paused' : 'idle', 'realtime');
 			} else if (status === 'reconnecting') {
 				this._connection_mode = 'polling';
-				this._polling_fallback.activate(() => this.pollRemoteChanges());
-				this._emitStatus('idle', 'polling');
+				if (!this._paused) {
+					this._polling_fallback.activate(() => this.pollRemoteChanges());
+				}
+				this._emitStatus(this._paused ? 'paused' : 'idle', 'polling');
 			} else if (status === 'disconnected') {
 				this._connection_mode = 'polling';
-				this._polling_fallback.activate(() => this.pollRemoteChanges());
-				this._emitStatus('idle', 'polling');
+				if (!this._paused) {
+					this._polling_fallback.activate(() => this.pollRemoteChanges());
+				}
+				this._emitStatus(this._paused ? 'paused' : 'idle', 'polling');
 			}
 		});
 
@@ -936,14 +981,14 @@ export class SyncEngine {
 		registerInterval(() => this.pollRemoteChanges(), intervalMs);
 
 		// WS 실시간 모드 활성화 시도
-		if (this._settings.server_url && this._settings.api_key && this._settings.vault_id) {
+		if (this._settings.server_url && this._settings.session_token && this._settings.vault_id) {
 			this.enableRealtimeMode();
 		}
 	}
 
 	/** 전체 동기화 (수동 트리거) (AC-005.1: 캐시 재구축) */
 	async performFullSync(): Promise<void> {
-		if (this._is_syncing) return;
+		if (this._paused || this._is_syncing) return;
 
 		try {
 			this._is_syncing = true;

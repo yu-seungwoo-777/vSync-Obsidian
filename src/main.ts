@@ -43,6 +43,13 @@ export default class VSyncPlugin extends Plugin {
 		this._statusBarItem = this.addStatusBarItem() as unknown as typeof this._statusBarItem;
 		this._statusBarItem?.setText('vSync: loading...');
 
+		// 상태 표시줄 클릭 시 동기화 토글
+		this.registerDomEvent(this._statusBarItem as unknown as HTMLElement, 'click', () => {
+			if (!this._isConfigured()) {
+				return;
+			}
+			this._toggleSync();
+		});
 		// Vault 어댑터 생성
 		const vaultAdapter = this._createVaultAdapter();
 
@@ -118,11 +125,16 @@ export default class VSyncPlugin extends Plugin {
 		// vault 로드 중 기존 파일의 create 이벤트가 트리거되는 것을 방지
 		if (this._isConfigured()) {
 			this._workspaceAdapter!.onLayoutReady(() => {
-				this._startSync();
+				// 동기화 활성화 여부 확인 (sync_enabled이면 동기화 시작, 아니면 paused 상태)
+				if (this.settings.sync_enabled) {
+					this._startSync();
 
-				// @MX:NOTE 큐에 복원된 항목이 있으면 flush 시도 (SPEC-P6-PERSIST-004 REQ-P6-002)
-				if (restoredQueue.length > 0) {
-					this._syncEngine?.flushOfflineQueue();
+					// @MX:NOTE 큐에 복원된 항목이 있으면 flush 시도 (SPEC-P6-PERSIST-004 REQ-P6-002)
+					if (restoredQueue.length > 0) {
+						this._syncEngine?.flushOfflineQueue();
+					}
+				} else {
+					this.updateStatus('paused');
 				}
 			});
 		} else {
@@ -196,6 +208,7 @@ export default class VSyncPlugin extends Plugin {
 			syncing: 'vSync: Syncing...',
 			polling: 'vSync: Synced (polling)',
 			connecting: 'vSync: Connecting...',
+			paused: 'vSync: Paused',
 			error: `vSync: Error: ${message || 'Unknown'}`,
 			not_configured: 'vSync: Not configured',
 		};
@@ -340,13 +353,10 @@ export default class VSyncPlugin extends Plugin {
 		new Notice(`${items.length}개 충돌을 원격 적용으로 해결했습니다`);
 	}
 
-	/** 설정이 구성되었는지 확인 */
+	/** 설정이 구성되었는지 확인 (ID/PW 로그인 전용) */
 	private _isConfigured(): boolean {
-		return !!(
-			this.settings.server_url &&
-			this.settings.api_key &&
-			this.settings.vault_id
-		);
+		const s = this.settings;
+		return !!(s.server_url && s.username && s.session_token && s.vault_id);
 	}
 
 	/** 동기화 시작 */
@@ -362,7 +372,38 @@ export default class VSyncPlugin extends Plugin {
 		this.updateStatus('idle');
 	}
 
-	/** 명령 등록 */
+		/** 동기화 토글 (켜기/끄기) */
+		private async _toggleSync(): Promise<void> {
+			if (!this._syncEngine) return;
+
+			if (this._syncEngine.isPaused) {
+				this.resumeSync();
+			} else {
+				this.pauseSync();
+			}
+		}
+
+		/** 동기화 일시정지 (설정 탭 및 토글에서 사용) */
+		pauseSync(): void {
+			if (this._syncEngine) {
+				this._syncEngine.pause();
+				this.settings.sync_enabled = false;
+				this.updateStatus('paused');
+				this.saveSettings();
+			}
+		}
+
+		/** 동기화 재개 (설정 탭 및 토글에서 사용) */
+		resumeSync(): void {
+			if (this._syncEngine) {
+				this._syncEngine.resume();
+				this.settings.sync_enabled = true;
+				this.updateStatus('idle');
+				this.saveSettings();
+			}
+		}
+
+		/** 명령 등록 */
 	private _registerCommands() {
 		// REQ-P4-019: 수동 동기화 명령
 		this.addCommand({
@@ -417,6 +458,13 @@ export default class VSyncPlugin extends Plugin {
 				this._activateLogView();
 			},
 		});
+
+			// 동기화 켜기/끄기 토글
+			this.addCommand({
+				id: 'vsync-toggle-sync',
+				name: 'Toggle Sync On/Off',
+				callback: () => this._toggleSync(),
+			});
 	}
 
 	/** 충돌 해결 뷰 활성화 (REQ-UX-009) */

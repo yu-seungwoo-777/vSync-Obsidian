@@ -20,9 +20,10 @@ import type {
 /** API 클라이언트 설정 */
 interface ClientSettings {
 	server_url: string;
-	api_key: string;
 	vault_id: string;
 	device_id: string;
+	/** JWT 세션 토큰 (로그인 플로우에서 사용) */
+	session_token: string;
 }
 
 /** 연결 테스트 결과 */
@@ -30,6 +31,28 @@ export interface ConnectionTestResult {
 	success: boolean;
 	fileCount?: number;
 	error?: string;
+}
+
+// @MX:NOTE 로그인 응답 타입
+/** 로그인 성공 응답 */
+export interface LoginResult {
+	token: string;
+	user: {
+		id: string;
+		username: string;
+		role: string;
+	};
+	vaults: Array<{
+		id: string;
+		name: string;
+	}>;
+}
+
+/** 볼트 정보 (인증 후 조회) */
+export interface VaultInfo {
+	id: string;
+	name: string;
+	created_at: string;
 }
 
 // @MX:NOTE 오프라인 큐 영속화 콜백 (SPEC-P6-PERSIST-004)
@@ -164,11 +187,46 @@ export class RateLimitBackoff {
 	}
 }
 
+// ============================================================
+// 정적 인증 API (인스턴스 불필요)
+// ============================================================
+
+/** 로그인 - POST /v1/auth/login */
+export async function login(
+	serverUrl: string,
+	username: string,
+	password: string,
+): Promise<LoginResult> {
+	const url = `${serverUrl.replace(/\/+$/, '')}/v1/auth/login`;
+	const response = await requestUrl({
+		url,
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify({ username, password }),
+	});
+	return response.json as LoginResult;
+}
+
+/** 볼트 목록 조회 - GET /v1/auth/vaults */
+export async function fetchVaults(
+	serverUrl: string,
+	token: string,
+): Promise<VaultInfo[]> {
+	const url = `${serverUrl.replace(/\/+$/, '')}/v1/auth/vaults`;
+	const response = await requestUrl({
+		url,
+		method: 'GET',
+		headers: { 'Authorization': `Bearer ${token}` },
+	});
+	const data = response.json as { vaults: VaultInfo[] };
+	return data.vaults ?? [];
+}
+
 export class VSyncClient {
 	private _base_url: string;
-	private _api_key: string;
 	private _vault_id: string;
 	private _device_id: string;
+	private _session_token: string;
 	private _offline_queue: OfflineQueueItem[] = [];
 	private _on_auth_failure?: () => void;
 	private _persist_callback: PersistCallback;
@@ -178,9 +236,9 @@ export class VSyncClient {
 	constructor(settings: ClientSettings, persistCallback?: PersistCallback, onFlushFailed?: FlushFailedCallback) {
 		// trailing slash 제거
 		this._base_url = settings.server_url.replace(/\/+$/, '');
-		this._api_key = settings.api_key;
 		this._vault_id = settings.vault_id;
 		this._device_id = settings.device_id;
+		this._session_token = settings.session_token;
 		this._persist_callback = persistCallback ?? (() => {});
 		this._on_flush_failed = onFlushFailed;
 	}
@@ -188,9 +246,9 @@ export class VSyncClient {
 	/** 설정 업데이트 */
 	updateSettings(settings: ClientSettings): void {
 		this._base_url = settings.server_url.replace(/\/+$/, '');
-		this._api_key = settings.api_key;
 		this._vault_id = settings.vault_id;
 		this._device_id = settings.device_id;
+		this._session_token = settings.session_token;
 	}
 
 	/** 인증 실패 콜백 설정 */
@@ -211,10 +269,7 @@ export class VSyncClient {
 			const response = await requestUrl({
 				url,
 				method: 'PUT',
-				headers: {
-					'X-API-Key': this._api_key,
-					'X-Device-ID': this._device_id,
-				},
+				headers: this._getAuthAndDeviceHeaders(),
 				contentType: 'text/markdown',
 				body: content,
 			});
@@ -248,9 +303,7 @@ export class VSyncClient {
 			const response = await requestUrl({
 				url,
 				method: 'GET',
-				headers: {
-					'X-API-Key': this._api_key,
-				},
+				headers: this._getAuthHeaders(),
 			});
 			return response.text;
 		} catch (error) {
@@ -267,10 +320,7 @@ export class VSyncClient {
 			await requestUrl({
 				url,
 				method: 'DELETE',
-				headers: {
-					'X-API-Key': this._api_key,
-					'X-Device-ID': this._device_id,
-				},
+				headers: this._getAuthAndDeviceHeaders(),
 			});
 		} catch (error) {
 			this._handleError(error);
@@ -300,10 +350,7 @@ export class VSyncClient {
 			const response = await requestUrl({
 				url,
 				method: 'PUT',
-				headers: {
-					'X-API-Key': this._api_key,
-					'X-Device-ID': this._device_id,
-				},
+				headers: this._getAuthAndDeviceHeaders(),
 				contentType: mimeType,
 				body: data,
 			});
@@ -332,9 +379,7 @@ export class VSyncClient {
 			const response = await requestUrl({
 				url,
 				method: 'GET',
-				headers: {
-					'X-API-Key': this._api_key,
-				},
+				headers: this._getAuthHeaders(),
 			});
 			return response.arrayBuffer;
 		} catch (error) {
@@ -358,9 +403,7 @@ export class VSyncClient {
 		const response = await requestUrl({
 			url,
 			method: 'GET',
-			headers: {
-				'X-API-Key': this._api_key,
-			},
+			headers: this._getAuthHeaders(),
 		});
 		// 하위 호환: 배열 응답(구형) 또는 { files, hasMore } (신형)
 		const data = response.json;
@@ -380,9 +423,7 @@ export class VSyncClient {
 		const response = await requestUrl({
 			url,
 			method: 'GET',
-			headers: {
-				'X-API-Key': this._api_key,
-			},
+			headers: this._getAuthHeaders(),
 		});
 		const data = response.json as { events: SyncEvent[] };
 		return data.events || [];
@@ -396,9 +437,9 @@ export class VSyncClient {
 			url,
 			method: 'PUT',
 			headers: {
-				'X-API-Key': this._api_key,
+				...this._getAuthHeaders(),
+				'Content-Type': 'application/json',
 			},
-			contentType: 'application/json',
 			body: JSON.stringify({
 				device_id: this._device_id,
 				last_event_id: lastEventId,
@@ -417,7 +458,7 @@ export class VSyncClient {
 		} catch (error: unknown) {
 			let errorMessage = 'Unknown error';
 			if (this._isAuthError(error)) {
-				errorMessage = 'Authentication failed. Please check your API key.';
+				errorMessage = 'Authentication failed. Please check your credentials.';
 			} else if (error instanceof Error) {
 				errorMessage = error.message;
 			}
@@ -428,116 +469,112 @@ export class VSyncClient {
 		}
 	}
 
-		// ============================================================
-		// SPEC-P8-PLUGIN-API-001: 신규 API 메서드
-		// ============================================================
+	// ============================================================
+	// SPEC-P8-PLUGIN-API-001: 신규 API 메서드
+	// ============================================================
 
-		/** 배치 연산 - POST /v1/vault/{id}/batch (REQ-PA-001) */
-		async batchOperations(operations: BatchOperation[]): Promise<BatchResult> {
-			const url = buildApiUrl(this._base_url, this._vault_id, 'batch');
-			const response = await requestUrl({
-				url,
-				method: 'POST',
-				headers: { 'X-API-Key': this._api_key, 'X-Device-ID': this._device_id },
-				contentType: 'application/json',
-				body: JSON.stringify({ operations }),
-			});
-			// 서버 응답: { results: [{ status, data?: {...}, error? }] } → 평탄화
-			const raw = response.json as { results: Array<{ status: number; data?: Record<string, unknown>; error?: string }> };
-			return {
-				results: raw.results.map((item) => ({
-					status: item.status,
-					path: (item.data?.path as string) ?? undefined,
-					hash: (item.data?.hash as string) ?? undefined,
-					error: item.error,
-				})),
-			};
-		}
+	/** 배치 연산 - POST /v1/vault/{id}/batch (REQ-PA-001) */
+	async batchOperations(operations: BatchOperation[]): Promise<BatchResult> {
+		const url = buildApiUrl(this._base_url, this._vault_id, 'batch');
+		const response = await requestUrl({
+			url,
+			method: 'POST',
+			headers: { ...this._getAuthAndDeviceHeaders(), 'Content-Type': 'application/json' },
+			body: JSON.stringify({ operations }),
+		});
+		// 서버 응답: { results: [{ status, data?: {...}, error? }] } → 평탄화
+		const raw = response.json as { results: Array<{ status: number; data?: Record<string, unknown>; error?: string }> };
+		return {
+			results: raw.results.map((item) => ({
+				status: item.status,
+				path: (item.data?.path as string) ?? undefined,
+				hash: (item.data?.hash as string) ?? undefined,
+				error: item.error,
+			})),
+		};
+	}
 
-		/** 파일 이동 - POST /v1/vault/{id}/move (REQ-PA-004) */
-		async moveFile(from: string, to: string): Promise<MoveResult> {
-			const url = buildApiUrl(this._base_url, this._vault_id, 'move');
-			const response = await requestUrl({
-				url,
-				method: 'POST',
-				headers: { 'X-API-Key': this._api_key, 'X-Device-ID': this._device_id },
-				contentType: 'application/json',
-				body: JSON.stringify({ from, to }),
-			});
-			return response.json as MoveResult;
-		}
+	/** 파일 이동 - POST /v1/vault/{id}/move (REQ-PA-004) */
+	async moveFile(from: string, to: string): Promise<MoveResult> {
+		const url = buildApiUrl(this._base_url, this._vault_id, 'move');
+		const response = await requestUrl({
+			url,
+			method: 'POST',
+			headers: { ...this._getAuthAndDeviceHeaders(), 'Content-Type': 'application/json' },
+			body: JSON.stringify({ from, to }),
+		});
+		return response.json as MoveResult;
+	}
 
-		/** 디바이스 목록 - GET /v1/vault/{id}/devices (REQ-PA-011) */
-		async getDevices(): Promise<DeviceInfo[]> {
-			const url = buildApiUrl(this._base_url, this._vault_id, 'devices');
-			const response = await requestUrl({
-				url,
-				method: 'GET',
-				headers: { 'X-API-Key': this._api_key },
-			});
-			const data = response.json as { devices: DeviceInfo[] };
-			return data.devices ?? [];
-		}
+	/** 디바이스 목록 - GET /v1/vault/{id}/devices (REQ-PA-011) */
+	async getDevices(): Promise<DeviceInfo[]> {
+		const url = buildApiUrl(this._base_url, this._vault_id, 'devices');
+		const response = await requestUrl({
+			url,
+			method: 'GET',
+			headers: this._getAuthHeaders(),
+		});
+		const data = response.json as { devices: DeviceInfo[] };
+		return data.devices ?? [];
+	}
 
-		/** 디바이스 제거 - DELETE /v1/vault/{id}/devices/{deviceId} (REQ-PA-012) */
-		async removeDevice(deviceId: string): Promise<void> {
-			const url = buildApiUrl(this._base_url, this._vault_id, 'devices', deviceId);
-			await requestUrl({
-				url,
-				method: 'DELETE',
-				headers: { 'X-API-Key': this._api_key, 'X-Device-ID': this._device_id },
-			});
-		}
+	/** 디바이스 제거 - DELETE /v1/vault/{id}/devices/{deviceId} (REQ-PA-012) */
+	async removeDevice(deviceId: string): Promise<void> {
+		const url = buildApiUrl(this._base_url, this._vault_id, 'devices', deviceId);
+		await requestUrl({
+			url,
+			method: 'DELETE',
+			headers: this._getAuthAndDeviceHeaders(),
+		});
+	}
 
-		/** 전문 검색 - GET /v1/vault/{id}/search (REQ-PA-013) */
-		async searchFiles(query: string, options?: { limit?: number; folder?: string }): Promise<SearchResponse> {
-			const params: string[] = [`q=${encodeURIComponent(query)}`];
-			if (options?.limit) params.push(`limit=${options.limit}`);
-			if (options?.folder) params.push(`folder=${encodeURIComponent(options.folder)}`);
-			const url = buildApiUrl(this._base_url, this._vault_id, 'search') + '?' + params.join('&');
-			const response = await requestUrl({
-				url,
-				method: 'GET',
-				headers: { 'X-API-Key': this._api_key },
-			});
-			return response.json as SearchResponse;
-		}
+	/** 전문 검색 - GET /v1/vault/{id}/search (REQ-PA-013) */
+	async searchFiles(query: string, options?: { limit?: number; folder?: string }): Promise<SearchResponse> {
+		const params: string[] = [`q=${encodeURIComponent(query)}`];
+		if (options?.limit) params.push(`limit=${options.limit}`);
+		if (options?.folder) params.push(`folder=${encodeURIComponent(options.folder)}`);
+		const url = buildApiUrl(this._base_url, this._vault_id, 'search') + '?' + params.join('&');
+		const response = await requestUrl({
+			url,
+			method: 'GET',
+			headers: this._getAuthHeaders(),
+		});
+		return response.json as SearchResponse;
+	}
 
-		/** 활성 충돌 목록 - GET /v1/vault/{id}/conflicts (REQ-PA-007) */
-		async getConflicts(): Promise<ConflictInfo[]> {
-			const url = buildApiUrl(this._base_url, this._vault_id, 'conflicts');
-			const response = await requestUrl({
-				url,
-				method: 'GET',
-				headers: { 'X-API-Key': this._api_key },
-			});
-			const data = response.json as { conflicts: ConflictInfo[] };
-			return data.conflicts ?? [];
-		}
+	/** 활성 충돌 목록 - GET /v1/vault/{id}/conflicts (REQ-PA-007) */
+	async getConflicts(): Promise<ConflictInfo[]> {
+		const url = buildApiUrl(this._base_url, this._vault_id, 'conflicts');
+		const response = await requestUrl({
+			url,
+			method: 'GET',
+			headers: this._getAuthHeaders(),
+		});
+		const data = response.json as { conflicts: ConflictInfo[] };
+		return data.conflicts ?? [];
+	}
 
-		/** 충돌 해결 - POST /v1/vault/{id}/conflicts/{id}/resolve (REQ-PA-008) */
-		async resolveConflict(conflictId: string, resolution: 'accept' | 'reject'): Promise<void> {
-			const url = buildApiUrl(this._base_url, this._vault_id, 'conflicts', conflictId, 'resolve');
-			await requestUrl({
-				url,
-				method: 'POST',
-				headers: { 'X-API-Key': this._api_key, 'X-Device-ID': this._device_id },
-				contentType: 'application/json',
-				body: JSON.stringify({ resolution }),
-			});
-		}
+	/** 충돌 해결 - POST /v1/vault/{id}/conflicts/{id}/resolve (REQ-PA-008) */
+	async resolveConflict(conflictId: string, resolution: 'accept' | 'reject'): Promise<void> {
+		const url = buildApiUrl(this._base_url, this._vault_id, 'conflicts', conflictId, 'resolve');
+		await requestUrl({
+			url,
+			method: 'POST',
+			headers: { ...this._getAuthAndDeviceHeaders(), 'Content-Type': 'application/json' },
+			body: JSON.stringify({ resolution }),
+		});
+	}
 
-		/** 병합 해결 - POST /v1/vault/{id}/conflicts/{id}/merge-resolve (REQ-PA-009) */
-		async mergeResolve(conflictId: string, content: string, hash: string): Promise<void> {
-			const url = buildApiUrl(this._base_url, this._vault_id, 'conflicts', conflictId, 'merge-resolve');
-			await requestUrl({
-				url,
-				method: 'POST',
-				headers: { 'X-API-Key': this._api_key, 'X-Device-ID': this._device_id },
-				contentType: 'application/json',
-				body: JSON.stringify({ content, hash }),
-			});
-		}
+	/** 병합 해결 - POST /v1/vault/{id}/conflicts/{id}/merge-resolve (REQ-PA-009) */
+	async mergeResolve(conflictId: string, content: string, hash: string): Promise<void> {
+		const url = buildApiUrl(this._base_url, this._vault_id, 'conflicts', conflictId, 'merge-resolve');
+		await requestUrl({
+			url,
+			method: 'POST',
+			headers: { ...this._getAuthAndDeviceHeaders(), 'Content-Type': 'application/json' },
+			body: JSON.stringify({ content, hash }),
+		});
+	}
 
 	// ============================================================
 	// 오프라인 큐 (REQ-P4-007, REQ-P6-017, SPEC-P6-PERSIST-004)
@@ -673,6 +710,20 @@ export class VSyncClient {
 		if (this._isAuthError(error) && this._on_auth_failure) {
 			this._on_auth_failure();
 		}
+	}
+
+	// @MX:NOTE JWT Bearer 토큰만 사용 (ID/PW 로그인 전용)
+	/** 인증 헤더 반환 (JWT Bearer) */
+	private _getAuthHeaders(): Record<string, string> {
+		return { 'Authorization': `Bearer ${this._session_token}` };
+	}
+
+	/** 인증 + 디바이스 ID 헤더 반환 */
+	private _getAuthAndDeviceHeaders(): Record<string, string> {
+		return {
+			...this._getAuthHeaders(),
+			'X-Device-ID': this._device_id,
+		};
 	}
 
 	/** 409 Conflict 에러 감지 (REQ-UX-002) */

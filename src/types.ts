@@ -13,8 +13,6 @@ import type { components } from './types/api-types';
 export interface VSyncSettings {
 	/** 서버 URL (trailing slash 제거) */
 	server_url: string;
-	/** API 인증 키 */
-	api_key: string;
 	/** 볼트 고유 ID */
 	vault_id: string;
 	/** 동기화 주기 (초 단위, 기본 30) */
@@ -25,15 +23,26 @@ export interface VSyncSettings {
 	last_event_id?: string;
 	/** 업로드된 파일 해시 캐시 (경로 → SHA-256) */
 	hash_cache?: Record<string, string>;
+	/** 동기화 활성화 여부 (기본값: true) */
+	sync_enabled: boolean;
+	/** 로그인 사용자명 */
+	username: string;
+	/** 로그인 비밀번호 */
+	password: string;
+	/** JWT 세션 토큰 (로그인 성공 시 발급) */
+	session_token: string;
 }
 
 /** 기본 설정값 */
 export const DEFAULT_SETTINGS: VSyncSettings = {
 	server_url: '',
-	api_key: '',
 	vault_id: '',
 	sync_interval: 30,
 	device_id: '',
+	sync_enabled: true,
+	username: '',
+	password: '',
+	session_token: '',
 };
 
 // ============================================================
@@ -112,7 +121,7 @@ export interface StandardErrorResult {
 // ============================================================
 
 /** 동기화 상태 */
-export type SyncStatus = 'idle' | 'syncing' | 'error' | 'not_configured';
+export type SyncStatus = 'idle' | 'syncing' | 'error' | 'not_configured' | 'paused';
 
 /** 오프라인 큐 항목 */
 export interface OfflineQueueItem {
@@ -193,7 +202,6 @@ export function isVSyncSettings(value: unknown): value is VSyncSettings {
 	const obj = value as Record<string, unknown>;
 	return (
 		typeof obj.server_url === 'string' &&
-		typeof obj.api_key === 'string' &&
 		typeof obj.vault_id === 'string' &&
 		typeof obj.sync_interval === 'number' &&
 		typeof obj.device_id === 'string'

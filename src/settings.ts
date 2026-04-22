@@ -3,11 +3,13 @@
 import { PluginSettingTab, requestUrl, Notice, Setting } from 'obsidian';
 import type { VSyncSettings, DeviceInfo } from './types';
 import { DEFAULT_SETTINGS } from './types';
+import { login, fetchVaults } from './api-client';
+import type { LoginResult } from './api-client';
 
 /** 설정 검증 결과 */
 export interface ValidationResult {
 	server_url: boolean;
-	api_key: boolean;
+	credentials: boolean;
 	vault_id: boolean;
 	all: boolean;
 }
@@ -28,8 +30,12 @@ export interface DeviceApi {
 }
 
 export class VSyncSettingTab extends PluginSettingTab {
-	plugin: { settings: VSyncSettings; saveSettings: () => Promise<void> };
+	plugin: { settings: VSyncSettings; saveSettings: () => Promise<void>; pauseSync?: () => void; resumeSync?: () => void };
 	private _deviceApi: DeviceApi | null = null;
+	// @MX:NOTE 로그인 결과 캐시 (설정 화면 리프레시 시 유지)
+	private _loginResult: LoginResult | null = null;
+	// @MX:NOTE 로그인 에러 메시지
+	private _loginError: string = '';
 
 	constructor(
 		app: any, // eslint-disable-line @typescript-eslint/no-explicit-any -- Obsidian PluginSettingTab 생성자가 App 타입 요구
@@ -50,6 +56,30 @@ export class VSyncSettingTab extends PluginSettingTab {
 
 		containerEl.createEl('h2', { text: 'vSync Settings' });
 
+		// 동기화 활성화 토글
+		new Setting(containerEl)
+			.setName('Enable Sync')
+			.setDesc('Toggle automatic synchronization on or off')
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.sync_enabled)
+					.onChange(async (value) => {
+						this.plugin.settings.sync_enabled = value;
+						await this.plugin.saveSettings();
+						if (value) {
+							this.plugin.resumeSync?.();
+						} else {
+							this.plugin.pauseSync?.();
+						}
+						this.display();
+					}),
+			);
+
+		// ============================================================
+		// Section 1: 연결 설정 (로그인)
+		// ============================================================
+		containerEl.createEl('h3', { text: 'Connection' });
+
 		// 서버 URL
 		new Setting(containerEl)
 			.setName('Server URL')
@@ -64,34 +94,142 @@ export class VSyncSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// API Key
+		// 사용자명
 		new Setting(containerEl)
-			.setName('API Key')
-			.setDesc('Vault API key (generated on vault creation)')
+			.setName('Username')
+			.setDesc('Login username')
+			.addText((text) =>
+				text
+					.setPlaceholder('Enter username')
+					.setValue(this.plugin.settings.username)
+					.onChange(async (value) => {
+						this.plugin.settings.username = value;
+						await this.plugin.saveSettings();
+					}),
+			);
+
+		// 비밀번호
+		new Setting(containerEl)
+			.setName('Password')
+			.setDesc('Login password')
 			.addText((text) => {
 				text
-					.setPlaceholder('Enter API key')
-					.setValue(this.plugin.settings.api_key)
+					.setPlaceholder('Enter password')
+					.setValue(this.plugin.settings.password)
 					.onChange(async (value) => {
-						this.plugin.settings.api_key = value;
+						this.plugin.settings.password = value;
 						await this.plugin.saveSettings();
 					});
 				text.inputEl.type = 'password';
 			});
 
-		// Vault ID
+		// 로그인 버튼 + 에러 메시지 영역
 		new Setting(containerEl)
-			.setName('Vault ID')
-			.setDesc('Vault UUID')
-			.addText((text) =>
-				text
-					.setPlaceholder('xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx')
-					.setValue(this.plugin.settings.vault_id)
-					.onChange(async (value) => {
-						this.plugin.settings.vault_id = value.trim();
-						await this.plugin.saveSettings();
-					}),
+			.setName('Login')
+			.setDesc('Authenticate with the vSync server')
+			.addButton((btn) =>
+				btn.setButtonText('Login').onClick(async () => {
+					await this._handleLogin();
+				}),
 			);
+
+		// 에러 메시지 표시
+		if (this._loginError) {
+			const errorEl = containerEl.createDiv({
+				text: this._loginError,
+			});
+			errorEl.style.color = 'var(--text-error)';
+			errorEl.style.padding = '4px 0 8px 0';
+		}
+
+		// 로그인 성공 상태 표시
+		if (this.plugin.settings.session_token) {
+			const statusEl = containerEl.createDiv({
+				text: 'Logged in as ' + this.plugin.settings.username,
+			});
+			statusEl.style.color = 'var(--text-success)';
+			statusEl.style.padding = '4px 0 8px 0';
+		}
+
+		// ============================================================
+		// Section 2: 볼트 선택 (로그인 후에만 표시)
+		// ============================================================
+		if (this.plugin.settings.session_token || this._loginResult) {
+			containerEl.createEl('h3', { text: 'Vault Selection' });
+
+			// 볼트 목록 (로그인 결과에서 가져오거나 다시 조회)
+			const vaults = this._loginResult?.vaults ?? [];
+
+			if (vaults.length > 0) {
+				// 볼트 선택 드롭다운
+				const vaultOptions: Record<string, string> = {};
+				for (const vault of vaults) {
+					vaultOptions[vault.id] = `${vault.name} (${vault.id.slice(0, 8)}...)`;
+				}
+
+				new Setting(containerEl)
+					.setName('Select Vault')
+					.setDesc('Choose the vault to sync with this device')
+					.addDropdown((dropdown) => {
+						dropdown
+							.addOptions(vaultOptions)
+							.setValue(this.plugin.settings.vault_id || vaults[0].id)
+							.onChange(async (value) => {
+								this.plugin.settings.vault_id = value;
+								await this.plugin.saveSettings();
+							});
+
+						// 단일 볼트면 자동 선택
+						if (vaults.length === 1 && !this.plugin.settings.vault_id) {
+							this.plugin.settings.vault_id = vaults[0].id;
+							this.plugin.saveSettings();
+						}
+					});
+
+				// 연결(Connect) 버튼
+				new Setting(containerEl)
+					.setName('Connect')
+					.setDesc('Apply vault selection and start syncing')
+					.addButton((btn) =>
+						btn.setButtonText('Connect').onClick(async () => {
+							if (!this.plugin.settings.vault_id) {
+								new Notice('볼트를 선택하세요');
+								return;
+							}
+						// 설정 저장
+							await this.plugin.saveSettings();
+							new Notice(`볼트 ${this.plugin.settings.vault_id}에 연결되었습니다`);
+							this.display();
+						}),
+					);
+
+				// 현재 선택된 볼트 정보
+				if (this.plugin.settings.vault_id) {
+					const selectedVault = vaults.find((v) => v.id === this.plugin.settings.vault_id);
+					if (selectedVault) {
+						const infoEl = containerEl.createDiv({
+							text: `Connected to: ${selectedVault.name} (${selectedVault.id})`,
+						});
+						infoEl.style.color = 'var(--text-success)';
+						infoEl.style.padding = '4px 0 8px 0';
+					}
+				}
+			} else {
+				// 볼트가 없는 경우 — 다시 불러오기 버튼
+				new Setting(containerEl)
+					.setName('No vaults found')
+					.setDesc('No vaults available for this account')
+					.addButton((btn) =>
+						btn.setButtonText('Refresh').onClick(async () => {
+							await this._handleRefreshVaults();
+						}),
+					);
+			}
+		}
+
+		// ============================================================
+		// Section 3: 동기화 설정
+		// ============================================================
 
 		// 동기화 주기
 		new Setting(containerEl)
@@ -149,6 +287,78 @@ export class VSyncSettingTab extends PluginSettingTab {
 
 		// 연결된 기기 관리 (REQ-PA-011, REQ-PA-012)
 		this._renderDeviceSection(containerEl);
+	}
+
+	/**
+	 * 로그인 처리
+	 */
+	private async _handleLogin(): Promise<void> {
+		const { server_url, username, password } = this.plugin.settings;
+
+		if (!server_url || !username || !password) {
+			this._loginError = '서버 URL, 사용자명, 비밀번호를 모두 입력하세요';
+			this.display();
+			return;
+		}
+
+		this._loginError = '';
+
+		try {
+			const result = await login(server_url, username, password);
+			this.plugin.settings.session_token = result.token;
+			this._loginResult = result;
+
+			// 단일 볼트면 자동 선택
+			if (result.vaults.length === 1) {
+				this.plugin.settings.vault_id = result.vaults[0].id;
+			}
+
+			await this.plugin.saveSettings();
+			new Notice(`로그인 성공: ${result.user.username}`);
+			this.display();
+		} catch (error) {
+			let msg = '로그인 실패';
+			if (error && typeof error === 'object' && 'status' in error) {
+				const status = (error as { status: number }).status;
+				if (status === 401) {
+					msg = '인증 실패: 사용자명 또는 비밀번호가 올바르지 않습니다';
+				} else {
+					msg = `로그인 실패: HTTP ${status}`;
+				}
+			} else if (error instanceof Error) {
+				msg = `로그인 실패: ${error.message}`;
+			}
+			this._loginError = msg;
+			this.display();
+		}
+	}
+
+	/**
+	 * 볼트 목록 새로고침
+	 */
+	private async _handleRefreshVaults(): Promise<void> {
+		if (!this.plugin.settings.session_token) {
+			new Notice('세션이 만료되었습니다. 다시 로그인하세요');
+			return;
+		}
+
+		try {
+			const vaults = await fetchVaults(
+				this.plugin.settings.server_url,
+				this.plugin.settings.session_token,
+			);
+			// 로그인 결과 업데이트
+			if (this._loginResult) {
+				this._loginResult = {
+					...this._loginResult,
+					vaults,
+				};
+			}
+			this.display();
+		} catch (error) {
+			const msg = (error instanceof Error) ? error.message : '알 수 없는 오류';
+			new Notice(`볼트 목록을 불러오지 못했습니다: ${msg}`);
+		}
 	}
 
 	/**
@@ -257,14 +467,14 @@ export class VSyncSettingTab extends PluginSettingTab {
 	 */
 	validateSettings(settings: VSyncSettings): ValidationResult {
 		const hasServerUrl = settings.server_url.trim().length > 0;
-		const hasApiKey = settings.api_key.trim().length > 0;
+		const hasCredentials = !!settings.session_token;
 		const hasVaultId = settings.vault_id.trim().length > 0;
 
 		return {
 			server_url: hasServerUrl,
-			api_key: hasApiKey,
+			credentials: hasCredentials,
 			vault_id: hasVaultId,
-			all: hasServerUrl && hasApiKey && hasVaultId,
+			all: hasServerUrl && hasCredentials && hasVaultId,
 		};
 	}
 
@@ -289,13 +499,16 @@ export class VSyncSettingTab extends PluginSettingTab {
 		const baseUrl = this.normalizeServerUrl(settings.server_url);
 		const url = `${baseUrl}/v1/vault/${settings.vault_id}/files`;
 
+			// JWT Bearer 토큰만 사용
+			const headers: Record<string, string> = {
+				'Authorization': `Bearer ${settings.session_token}`,
+			};
+
 		try {
 			const response = await requestUrl({
 				url,
 				method: 'GET',
-				headers: {
-					'X-API-Key': settings.api_key,
-				},
+				headers,
 			});
 			const files = response.json as unknown[];
 			return {
@@ -307,7 +520,7 @@ export class VSyncSettingTab extends PluginSettingTab {
 			if (error && typeof error === 'object' && 'status' in error) {
 				const status = (error as { status: number }).status;
 				if (status === 401) {
-					errorMessage = 'Authentication failed. Check your API key.';
+					errorMessage = 'Authentication failed. Check your credentials.';
 				} else if (status === 404) {
 					errorMessage = 'Vault not found. Check your Vault ID.';
 				} else {

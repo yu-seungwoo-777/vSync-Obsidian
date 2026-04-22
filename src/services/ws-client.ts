@@ -35,7 +35,7 @@ export type OnSyncEvent = (event: SyncEvent) => void;
  */
 export class WSClient {
 	private _server_url: string;
-	private _api_key: string;
+	private _session_token: string;
 	private _vault_id: string;
 	private _device_id: string;
 
@@ -55,13 +55,13 @@ export class WSClient {
 
 	constructor(options: {
 		server_url: string;
-		api_key: string;
+		session_token: string;
 		vault_id: string;
 		device_id: string;
 		heartbeat_interval_ms?: number;
 	}) {
 		this._server_url = options.server_url;
-		this._api_key = options.api_key;
+		this._session_token = options.session_token;
 		this._vault_id = options.vault_id;
 		this._device_id = options.device_id;
 		this._heartbeat_interval_ms = options.heartbeat_interval_ms ?? HEARTBEAT_INTERVAL_MS;
@@ -105,7 +105,7 @@ export class WSClient {
 			wsUrl = 'ws://' + wsUrl.slice(7);
 		}
 
-		return `${wsUrl}/ws/sync/${this._vault_id}?apiKey=${this._api_key}`;
+		return `${wsUrl}/ws/sync/${this._vault_id}?token=${this._session_token}`;
 	}
 
 	/** WebSocket 연결 */
