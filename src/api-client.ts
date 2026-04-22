@@ -48,11 +48,10 @@ export interface LoginResult {
 	}>;
 }
 
-/** 볼트 정보 (인증 후 조회) */
+/** 볼트 정보 */
 export interface VaultInfo {
 	id: string;
 	name: string;
-	created_at: string;
 }
 
 // @MX:NOTE 오프라인 큐 영속화 콜백 (SPEC-P6-PERSIST-004)
@@ -191,18 +190,19 @@ export class RateLimitBackoff {
 // 정적 인증 API (인스턴스 불필요)
 // ============================================================
 
-/** 로그인 - POST /v1/auth/login */
+/** 로그인 - POST /v1/auth/login (device_id 포함, REQ-DB-005) */
 export async function login(
 	serverUrl: string,
 	username: string,
 	password: string,
+	deviceId: string,
 ): Promise<LoginResult> {
 	const url = `${serverUrl.replace(/\/+$/, '')}/v1/auth/login`;
 	const response = await requestUrl({
 		url,
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ username, password }),
+		body: JSON.stringify({ username, password, device_id: deviceId }),
 	});
 	return response.json as LoginResult;
 }

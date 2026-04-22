@@ -1138,5 +1138,43 @@ describe('VSyncClient', () => {
 			expect(call.url).toContain('limit=100');
 			expect(call.url).toContain('cursor=tok');
 		});
+
+		// ============================================================
+		// SPEC-JWT-DEVICE-BINDING-001: login 함수 device_id 전송 (REQ-DB-005)
+		// ============================================================
+
+		describe('login (REQ-DB-005)', () => {
+			it('login 함수가 device_id를 요청 본문에 포함해야 한다', async () => {
+				const { login } = await import('../../src/api-client');
+				mockRequestUrl.mockResolvedValueOnce(
+					makeResponse({
+						json: {
+							token: 'jwt-token-123',
+							user: { id: 'u1', username: 'testuser', role: 'admin' },
+							vaults: [{ id: 'v1', name: 'Test Vault' }],
+						},
+					})
+				);
+
+				const result = await login('https://sync.example.com', 'testuser', 'password123', 'my-device-id');
+
+				expect(mockRequestUrl).toHaveBeenCalledWith(
+					expect.objectContaining({
+						url: 'https://sync.example.com/v1/auth/login',
+						method: 'POST',
+					})
+				);
+
+				const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+				const body = JSON.parse(call.body as string);
+				expect(body.username).toBe('testuser');
+				expect(body.password).toBe('password123');
+				expect(body.device_id).toBe('my-device-id');
+
+				expect(result.token).toBe('jwt-token-123');
+				expect(result.user.username).toBe('testuser');
+				expect(result.vaults).toHaveLength(1);
+			});
+		});
 	});
 });

@@ -146,13 +146,8 @@ export default class VSyncPlugin extends Plugin {
 
 		// 설정 탭 등록 + 디바이스 API 주입 (REQ-PA-011, REQ-PA-012)
 		const settingTab = new VSyncSettingTab(this.app, this);
-		if (this._syncEngine) {
-			settingTab.setDeviceApi({
-				getDevices: () => this._syncEngine!.getDevices(),
-				removeDevice: (deviceId: string) => this._syncEngine!.removeDevice(deviceId),
-				getCurrentDeviceId: () => this.settings.device_id,
-			});
-		}
+		settingTab.setConnectHandler((s) => this.connectAndSync(s));
+		settingTab.setDisconnectHandler(() => this.disconnect());
 		this.addSettingTab(settingTab);
 	}
 
@@ -402,6 +397,57 @@ export default class VSyncPlugin extends Plugin {
 				this.saveSettings();
 			}
 		}
+
+
+	/** 연결 설정 적용 후 동기화 시작 (모달에서 호출) */
+	async connectAndSync(newSettings: Partial<VSyncSettings>): Promise<boolean> {
+		Object.assign(this.settings, newSettings);
+		await this.saveSettings();
+
+		// 엔진이 없으면 (disconnect 후) 재생성
+		if (!this._syncEngine) {
+			const vaultAdapter = this._createVaultAdapter();
+			this._syncEngine = new SyncEngine(
+				this.settings,
+				vaultAdapter,
+				(msg: string) => {
+					syncLogger.info(msg);
+					this._copyableNotice(msg);
+				},
+				(items: OfflineQueueItem[]) => this._persistQueue(items),
+				[],
+				this.conflictQueue,
+			);
+		}
+
+		this._syncEngine.updateSettings(this.settings);
+
+		if (this._isConfigured()) {
+			this.settings.sync_enabled = true;
+			await this.saveSettings();
+			this._startSync();
+			this.updateStatus('idle');
+			return true;
+		}
+
+		return false;
+	}
+
+	/** 연결 해제 — 세션 초기화 및 동기화 중지 */
+	async disconnect(): Promise<void> {
+		if (this._syncEngine) {
+			this._syncEngine.destroy();
+			this._syncEngine = null;
+		}
+
+		this.settings.session_token = '';
+		this.settings.vault_id = '';
+		this.settings.sync_enabled = false;
+		this.settings.last_event_id = undefined;
+		this.settings.hash_cache = undefined;
+		await this.saveSettings();
+		this.updateStatus('not_configured');
+	}
 
 		/** 명령 등록 */
 	private _registerCommands() {

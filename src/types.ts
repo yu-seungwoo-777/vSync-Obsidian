@@ -17,6 +17,8 @@ export interface VSyncSettings {
 	vault_id: string;
 	/** 동기화 주기 (초 단위, 기본 30) */
 	sync_interval: number;
+	/** 연결 모드 (realtime=WS, polling=폴링) */
+	connection_mode: 'realtime' | 'polling';
 	/** 디바이스 식별자 */
 	device_id: string;
 	/** 마지막 동기화 이벤트 ID (커서) */
@@ -38,8 +40,9 @@ export const DEFAULT_SETTINGS: VSyncSettings = {
 	server_url: '',
 	vault_id: '',
 	sync_interval: 30,
+	connection_mode: 'realtime',
 	device_id: '',
-	sync_enabled: true,
+	sync_enabled: false,
 	username: '',
 	password: '',
 	session_token: '',
