@@ -43,7 +43,7 @@ export interface RequestUrlResponse {
 // ============================================================
 
 // requestUrl - 각 테스트에서 vi.mocked로 오버라이드 가능
-export const requestUrl = vi.fn<Promise<RequestUrlResponse>>().mockImplementation(async () => ({
+export const requestUrl = vi.fn().mockImplementation(async () => ({
 	status: 200,
 	headers: {},
 	text: '',
@@ -74,7 +74,7 @@ export const moment = vi.fn().mockReturnValue({
 
 // Plugin 기본 클래스 mock
 export class Plugin {
-	loadData = vi.fn<Promise<unknown>>().mockResolvedValue(null);
+	loadData = vi.fn().mockResolvedValue(null);
 	saveData = vi.fn().mockResolvedValue(undefined);
 	addStatusBarItem = vi.fn().mockReturnValue({
 		setText: vi.fn().mockReturnThis(),
@@ -84,6 +84,7 @@ export class Plugin {
 	});
 	registerInterval = vi.fn();
 	registerEvent = vi.fn().mockReturnValue({ detach: vi.fn() });
+	registerDomEvent = vi.fn();
 	addCommand = vi.fn().mockReturnValue({ detach: vi.fn() });
 	addSettingTab = vi.fn();
 	registerView = vi.fn();

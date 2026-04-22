@@ -68,7 +68,7 @@ vi.mock('../../src/services/ws-client', () => ({
 		on: vi.fn(),
 		isConnected: false,
 		reconnectAttempts: 0,
-		buildWSUrl: vi.fn().mockReturnValue('ws://localhost/ws/sync/vault-1?apiKey=test-key'),
+		buildWSUrl: vi.fn().mockReturnValue('ws://localhost/ws/sync/vault-1?token=test-token'),
 	})),
 	calculateReconnectDelay: vi.fn().mockReturnValue(1000),
 }));
@@ -84,7 +84,7 @@ describe('SyncEngine', () => {
 		settings = {
 			...DEFAULT_SETTINGS,
 			server_url: 'https://sync.example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 			device_id: 'device-1',
 			sync_interval: 30,
@@ -595,7 +595,7 @@ describe('SyncEngine', () => {
 				}),
 				isConnected: false,
 				reconnectAttempts: 0,
-				buildWSUrl: vi.fn().mockReturnValue('ws://localhost/ws/sync/vault-1?apiKey=test-key'),
+				buildWSUrl: vi.fn().mockReturnValue('ws://localhost/ws/sync/vault-1?token=test-token'),
 			};
 			vi.mocked(WSClient).mockReturnValueOnce(mockWsClient as any);
 
@@ -666,7 +666,7 @@ describe('SyncEngine', () => {
 		describe('해시 캐시 (SPEC-P6-DEDUP-003)', () => {
 			it('동일 해시면 업로드를 스킵해야 한다 (AC-002.2)', async () => {
 				vault._textMap.set('notes/test.md', 'content');
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				cache.set('notes/test.md', 'same-hash');
 				vi.mocked(computeHash).mockResolvedValueOnce('same-hash');
 				await (engine as any)._uploadLocalFile('notes/test.md');
@@ -675,7 +675,7 @@ describe('SyncEngine', () => {
 
 			it('다른 해시면 업로드해야 한다 (AC-002.3)', async () => {
 				vault._textMap.set('notes/test.md', 'new content');
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				cache.set('notes/test.md', 'old-hash');
 				vi.mocked(computeHash).mockResolvedValueOnce('new-hash');
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/test.md', hash: 'server-new', sizeBytes: 11, version: 1 });
@@ -688,13 +688,13 @@ describe('SyncEngine', () => {
 				vi.mocked(computeHash).mockResolvedValueOnce('client-hash');
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/test.md', hash: 'server-hash-abc', sizeBytes: 7, version: 1 });
 				await (engine as any)._uploadLocalFile('notes/test.md');
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				expect(cache.get('notes/test.md')).toBe('server-hash-abc');
 			});
 
 			it('업로드 실패 시 캐시를 업데이트하지 않아야 한다 (AC-003.4)', async () => {
 				vault._textMap.set('notes/test.md', 'content');
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				cache.set('notes/test.md', 'original-hash');
 				vi.mocked(computeHash).mockResolvedValueOnce('new-hash');
 				mockApiClient.rawUpload.mockRejectedValueOnce(new Error('Network error'));
@@ -705,27 +705,27 @@ describe('SyncEngine', () => {
 			it('설정에서 해시 캐시를 복원해야 한다 (AC-006.2)', () => {
 				const s: VSyncSettings = { ...settings, hash_cache: { 'a.md': 'ha', 'b.md': 'hb' } };
 				const e = new SyncEngine(s, vault as never, mockNotice);
-				const c = (e as any)._hash_cache as Map<string, string>;
+				const c = (e as any)._hashCache as Map<string, string>;
 				expect(c.size).toBe(2);
 				expect(c.get('a.md')).toBe('ha');
 			});
 
 			it('hashCache 없는 설정으로 정상 시작 (AC-006.6)', () => {
 				const e = new SyncEngine(settings, vault as never, mockNotice);
-				expect(((e as any)._hash_cache as Map<string, string>).size).toBe(0);
+				expect(((e as any)._hashCache as Map<string, string>).size).toBe(0);
 			});
 
 			it('설정 변경 시 캐시를 초기화해야 한다 (AC-007.1)', () => {
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				cache.set('test.md', 'hash');
 				engine.updateSettings({ ...settings });
 				// updateSettings creates a new Map instance
-				const updatedCache = (engine as any)._hash_cache as Map<string, string>;
+				const updatedCache = (engine as any)._hashCache as Map<string, string>;
 				expect(updatedCache.size).toBe(0);
 			});
 
 			it('파일 삭제 시 캐시 엔트리를 제거해야 한다 (AC-007.3)', async () => {
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				cache.set('notes/old.md', 'old-hash');
 				mockApiClient.deleteFile.mockResolvedValueOnce(undefined);
 				await engine.handleLocalDelete('notes/old.md');
@@ -733,7 +733,7 @@ describe('SyncEngine', () => {
 			});
 
 			it('원격 다운로드 후 캐시 엔트리를 제거해야 한다 (AC-007.4)', async () => {
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				cache.set('notes/remote.md', 'old-hash');
 				mockApiClient.getEvents.mockResolvedValueOnce([
 					{ id: '10', event_type: 'created', file_path: 'notes/remote.md', device_id: 'device-2', created_at: '2026-01-01' },
@@ -797,7 +797,7 @@ describe('SyncEngine', () => {
 				(engine as any)._updateHashCache('a.md', 'hash-a');
 				(engine as any)._updateHashCache('b.md', 'hash-b');
 				(engine as any)._updateHashCache('a.md', 'hash-a-v2');
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				expect([...cache.keys()]).toEqual(['b.md', 'a.md']);
 				expect(cache.get('a.md')).toBe('hash-a-v2');
 			});
@@ -812,7 +812,7 @@ describe('SyncEngine', () => {
 				vault.getFiles.mockReturnValueOnce([]);
 				mockApiClient.rawDownload.mockResolvedValue('content');
 				await engine.performInitialSync();
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				expect(cache.get('a.md')).toBe('sha');
 				expect(cache.get('b.md')).toBe('shb');
 			});
@@ -823,14 +823,14 @@ describe('SyncEngine', () => {
 				vault.getFiles.mockReturnValueOnce([createMockFile('local.md', 'content')]);
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'local.md', hash: 'uh', sizeBytes: 7, version: 1 });
 				await engine.performInitialSync();
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				expect(cache.get('local.md')).toBe('uh');
 			});
 		});
 
 		describe('전체 동기화 캐시 재구축 (SPEC-P6-DEDUP-003 REQ-DP-005)', () => {
 			it('performFullSync 시 캐시 비우고 재구축 (AC-005.1, AC-005.2)', async () => {
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				cache.set('old.md', 'old-hash');
 				vault._textMap.set('test.md', 'content');
 				vault.getFiles.mockReturnValueOnce([createMockFile('test.md', 'content')]);
@@ -865,7 +865,7 @@ describe('SyncEngine', () => {
 				}),
 				isConnected: false,
 				reconnectAttempts: 0,
-				buildWSUrl: vi.fn().mockReturnValue('ws://localhost/ws/sync/vault-1?apiKey=test-key'),
+				buildWSUrl: vi.fn().mockReturnValue('ws://localhost/ws/sync/vault-1?token=test-token'),
 			};
 			vi.mocked(WSClient).mockReturnValueOnce(mockWsClient as any);
 
@@ -1015,7 +1015,7 @@ describe('SyncEngine', () => {
 
 				await (engine as any)._batchUploadFiles(uploadFiles, []);
 
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				expect(cache.get('ok1.md')).toBe('rh1');
 				expect(cache.get('ok2.md')).toBe('rh2');
 				expect(mockApiClient.enqueue).toHaveBeenCalledWith(
@@ -1038,7 +1038,7 @@ describe('SyncEngine', () => {
 
 				await (engine as any)._batchUploadFiles(uploadFiles, []);
 
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				expect(cache.get('a.md')).toBe('ra');
 				expect(cache.get('b.md')).toBe('rb');
 				expect(mockApiClient.enqueue).not.toHaveBeenCalled();
@@ -1060,7 +1060,7 @@ describe('SyncEngine', () => {
 
 			it('AC-002: rename 성공 시 해시 캐시 이관', async () => {
 				mockApiClient.moveFile.mockResolvedValueOnce({ success: true, from: 'notes/old.md', to: 'notes/new.md' });
-				const cache = (engine as any)._hash_cache as Map<string, string>;
+				const cache = (engine as any)._hashCache as Map<string, string>;
 				cache.set('notes/old.md', 'hash-abc');
 
 				await (engine as any).handleLocalRename('notes/old.md', 'notes/new.md');
@@ -1130,7 +1130,7 @@ describe('SyncEngine', () => {
 				vault._textMap.set('notes/old.md', 'old content');
 				vault._textMap.set('notes/new.md', 'existing content');
 				const cq = new ConflictQueue();
-				(engine as any)._conflict_queue = cq;
+				(engine as any)._conflictQueue = cq;
 
 				mockApiClient.getEvents.mockResolvedValueOnce([
 					{ id: 'm2', event_type: 'moved', file_path: 'notes/new.md', device_id: 'device-2', created_at: '2026-01-01', from_path: 'notes/old.md' },
@@ -1190,7 +1190,7 @@ describe('SyncEngine', () => {
 		describe('서버 충돌 동기화 (REQ-PA-007, T-012)', () => {
 			it('시작 시 서버 충돌 목록을 로컬 큐에 머지', async () => {
 				const cq = new ConflictQueue();
-				(engine as any)._conflict_queue = cq;
+				(engine as any)._conflictQueue = cq;
 
 				mockApiClient.getConflicts.mockResolvedValueOnce([
 					{ id: 'sc-1', original_path: 'notes/a.md', conflict_path: 'notes/a.sync-conflict.md', created_at: '2026-04-19T00:00:00Z' },
@@ -1206,7 +1206,7 @@ describe('SyncEngine', () => {
 
 			it('중복 충돌은 큐에 추가하지 않음', async () => {
 				const cq = new ConflictQueue();
-				(engine as any)._conflict_queue = cq;
+				(engine as any)._conflictQueue = cq;
 				cq.enqueue({
 					id: 'local-1',
 					file_path: 'notes/a.md',
@@ -1231,7 +1231,7 @@ describe('SyncEngine', () => {
 
 			it('getConflicts 실패 시 무시 (graceful degradation)', async () => {
 				const cq = new ConflictQueue();
-				(engine as any)._conflict_queue = cq;
+				(engine as any)._conflictQueue = cq;
 				mockApiClient.getConflicts.mockRejectedValueOnce(new Error('Network error'));
 
 				await (engine as any).syncServerConflicts();
@@ -1243,7 +1243,7 @@ describe('SyncEngine', () => {
 		describe('자동 병합 (REQ-PA-010, T-015)', () => {
 			it('can_auto_merge=true 시 충돌 큐 생략 후 자동 병합', async () => {
 				const cq = new ConflictQueue();
-				(engine as any)._conflict_queue = cq;
+				(engine as any)._conflictQueue = cq;
 				vi.mocked(computeHash).mockResolvedValueOnce('merged-hash');
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'auto.md', hash: 'merged-hash', sizeBytes: 10, version: 2 });
 				mockApiClient.mergeResolve.mockResolvedValueOnce(undefined);
@@ -1258,7 +1258,7 @@ describe('SyncEngine', () => {
 
 			it('자동 병합 실패 시 false 반환', async () => {
 				const cq = new ConflictQueue();
-				(engine as any)._conflict_queue = cq;
+				(engine as any)._conflictQueue = cq;
 				vi.mocked(computeHash).mockResolvedValueOnce('hash');
 				mockApiClient.rawUpload.mockRejectedValueOnce(new Error('Upload failed'));
 

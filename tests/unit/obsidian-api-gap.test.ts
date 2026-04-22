@@ -42,6 +42,8 @@ vi.mock('../../src/settings', () => ({
 		testConnection: vi.fn(),
 		normalizeServerUrl: vi.fn(),
 		setDeviceApi: vi.fn(),
+			setConnectHandler: vi.fn(),
+			setDisconnectHandler: vi.fn(),
 	})),
 	DEFAULT_SETTINGS: {
 		server_url: '',
@@ -86,7 +88,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: VaultAdapter 인터페이스 확장', () =>
 		it('renameFile 메서드가 VaultAdapter에 정의되어야 한다 (REQ-API-002)', async () => {
 			plugin.loadData = vi.fn().mockResolvedValue({
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 			});
 			await plugin.onload();
@@ -98,7 +100,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: VaultAdapter 인터페이스 확장', () =>
 		it('process 메서드가 VaultAdapter에 정의되어야 한다 (REQ-API-003)', async () => {
 			plugin.loadData = vi.fn().mockResolvedValue({
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 			});
 			await plugin.onload();
@@ -110,7 +112,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: VaultAdapter 인터페이스 확장', () =>
 		it('cachedRead 메서드가 VaultAdapter에 정의되어야 한다 (REQ-API-005)', async () => {
 			plugin.loadData = vi.fn().mockResolvedValue({
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 			});
 			await plugin.onload();
@@ -146,7 +148,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-001 onLayoutReady 래핑', () => {
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -177,7 +179,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-001 onLayoutReady 래핑', () => {
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -211,7 +213,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-001 onLayoutReady 래핑', () => {
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 			__offlineQueue: [
 				{
@@ -219,7 +221,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-001 onLayoutReady 래핑', () => {
 					content: 'queued content',
 					operation: 'upload',
 					timestamp: Date.now(),
-					retry_count: 0,
+					retryCount: 0,
 				},
 			],
 		});
@@ -264,7 +266,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-002 fileManager.renameFile', () => 
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -286,7 +288,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-002 fileManager.renameFile', () => 
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -310,7 +312,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-002 fileManager.renameFile', () => 
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -350,7 +352,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-003 vault.process 원자적 연산'
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -372,7 +374,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-003 vault.process 원자적 연산'
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -395,7 +397,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-003 vault.process 원자적 연산'
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -431,7 +433,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-004 vault.trash 복구 가능한 �
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -452,7 +454,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-004 vault.trash 복구 가능한 �
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -469,7 +471,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-004 vault.trash 복구 가능한 �
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -502,7 +504,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-005 vault.cachedRead 캐시 활용'
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -520,7 +522,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-005 vault.cachedRead 캐시 활용'
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -541,7 +543,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-005 vault.cachedRead 캐시 활용'
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 
@@ -560,7 +562,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-005 vault.cachedRead 캐시 활용'
 
 		plugin.loadData = vi.fn().mockResolvedValue({
 			server_url: 'https://example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 		});
 

@@ -56,7 +56,7 @@ vi.mock('../../src/services/ws-client', () => ({
 		on: vi.fn(),
 		isConnected: false,
 		reconnectAttempts: 0,
-		buildWSUrl: vi.fn().mockReturnValue('ws://localhost/ws/sync/vault-1?apiKey=test-key'),
+		buildWSUrl: vi.fn().mockReturnValue('ws://localhost/ws/sync/vault-1?token=test-token'),
 	})),
 	calculateReconnectDelay: vi.fn().mockReturnValue(1000),
 }));
@@ -72,7 +72,7 @@ describe('SyncEngine - 신뢰성 (SPEC-P6-RELIABLE-005)', () => {
 		settings = {
 			...DEFAULT_SETTINGS,
 			server_url: 'https://sync.example.com',
-			api_key: 'test-key',
+			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
 			device_id: 'device-1',
 			sync_interval: 30,

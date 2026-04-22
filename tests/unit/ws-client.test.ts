@@ -71,7 +71,7 @@ describe('WSClient', () => {
 	function createClient(options?: { heartbeat_interval_ms?: number }) {
 		return new WSClient({
 			server_url: 'https://sync.example.com',
-			api_key: 'test-api-key',
+			session_token: 'test-token',
 			vault_id: 'vault-123',
 			device_id: 'device-abc',
 			heartbeat_interval_ms: options?.heartbeat_interval_ms ?? 30_000,
@@ -86,13 +86,13 @@ describe('WSClient', () => {
 		it('http:// 서버 URL은 ws://로 변환해야 한다', () => {
 			const client = new WSClient({
 				server_url: 'http://sync.example.com',
-				api_key: 'key',
+				session_token: 'key',
 				vault_id: 'vault-1',
 				device_id: 'dev-1',
 			});
 
 			expect(client.buildWSUrl()).toBe(
-				'ws://sync.example.com/ws/sync/vault-1?apiKey=key',
+				'ws://sync.example.com/ws/sync/vault-1?token=key',
 			);
 		});
 
@@ -100,20 +100,20 @@ describe('WSClient', () => {
 			const client = createClient();
 
 			expect(client.buildWSUrl()).toBe(
-				'wss://sync.example.com/ws/sync/vault-123?apiKey=test-api-key',
+				'wss://sync.example.com/ws/sync/vault-123?token=test-token',
 			);
 		});
 
 		it('trailing slash가 있으면 제거해야 한다', () => {
 			const client = new WSClient({
 				server_url: 'https://sync.example.com/',
-				api_key: 'key',
+				session_token: 'key',
 				vault_id: 'vault-1',
 				device_id: 'dev-1',
 			});
 
 			expect(client.buildWSUrl()).toBe(
-				'wss://sync.example.com/ws/sync/vault-1?apiKey=key',
+				'wss://sync.example.com/ws/sync/vault-1?token=key',
 			);
 		});
 

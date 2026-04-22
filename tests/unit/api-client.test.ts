@@ -21,14 +21,14 @@ vi.mock('obsidian', () => ({
 
 import { VSyncClient, getMimeType } from '../../src/api-client';
 
-function makeResponse(overrides: Partial<RequestUrlResponse> = {}): RequestUrlResponse {
+function makeResponse(overrides: Partial<RequestUrlResponse> & { json?: unknown } = {}): RequestUrlResponse {
 	return {
 		status: 200,
 		headers: {},
 		text: '',
-		json: {} as Record<string, unknown>,
+		json: (overrides.json ?? {}) as Record<string, unknown>,
 		arrayBuffer: new ArrayBuffer(0),
-		...overrides,
+		...(overrides as Partial<RequestUrlResponse>),
 	};
 }
 
@@ -37,7 +37,7 @@ describe('VSyncClient', () => {
 
 	const baseSettings = {
 		server_url: 'https://sync.example.com',
-		api_key: 'test-api-key',
+		session_token: 'test-token',
 		vault_id: 'vault-1',
 		device_id: 'device-1',
 	};
@@ -63,8 +63,7 @@ describe('VSyncClient', () => {
 				})
 			);
 
-			const result = await client.rawUpload('notes/test.md', '# Test');
-
+			const result = await client.rawUpload('notes/test.md', '# Test') as any; // eslint-disable-line @typescript-eslint/no-explicit-any
 			expect(mockRequestUrl).toHaveBeenCalledWith(
 				expect.objectContaining({
 					url: 'https://sync.example.com/v1/vault/vault-1/raw/notes%2Ftest.md',
@@ -77,7 +76,7 @@ describe('VSyncClient', () => {
 			expect(result.hash).toBe('abc123');
 		});
 
-		it('X-API-Key와 X-Device-ID 헤더를 포함해야 한다', async () => {
+		it('Authorization Bearer와 X-Device-ID 헤더를 포함해야 한다', async () => {
 			mockRequestUrl.mockResolvedValueOnce(
 				makeResponse({
 					json: { id: 1, path: 'test.md', hash: 'h', size_bytes: 0, version: 1 },
@@ -89,7 +88,7 @@ describe('VSyncClient', () => {
 			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(call.headers).toEqual(
 				expect.objectContaining({
-					'X-API-Key': 'test-api-key',
+					'Authorization': 'Bearer test-token',
 					'X-Device-ID': 'device-1',
 				})
 			);
@@ -126,13 +125,13 @@ describe('VSyncClient', () => {
 			expect(content).toBe('# Downloaded content');
 		});
 
-		it('다운로드 시 X-API-Key 헤더를 포함해야 한다', async () => {
+		it('다운로드 시 Authorization Bearer 헤더를 포함해야 한다', async () => {
 			mockRequestUrl.mockResolvedValueOnce(makeResponse({ text: '' }));
 
 			await client.rawDownload('test.md');
 
 			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
-			expect(call.headers?.['X-API-Key']).toBe('test-api-key');
+			expect(call.headers?.['Authorization']).toBe('Bearer test-token');
 		});
 	});
 
@@ -236,7 +235,7 @@ describe('VSyncClient', () => {
 
 			const result = await client.testConnection();
 
-			expect(result.success).toBe(true);
+			expect((result as Record<string, unknown>).success).toBe(true);
 			expect(result.fileCount).toBe(2);
 		});
 
@@ -356,7 +355,7 @@ describe('VSyncClient', () => {
 			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(call.headers).toEqual(
 				expect.objectContaining({
-					'X-API-Key': 'test-api-key',
+					'Authorization': 'Bearer test-token',
 					'X-Device-ID': 'device-1',
 				})
 			);
@@ -1043,7 +1042,7 @@ describe('VSyncClient', () => {
 			mockRequestUrl.mockResolvedValueOnce(makeResponse({ json: { success: true, from: 'old.md', to: 'new.md' } }));
 			const result = await client.moveFile('old.md', 'new.md');
 			expect(mockRequestUrl).toHaveBeenCalledWith(expect.objectContaining({ url: expect.stringContaining('/move'), method: 'POST' }));
-			expect(result.success).toBe(true);
+			expect((result as Record<string, unknown>).success).toBe(true);
 		});
 	});
 

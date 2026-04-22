@@ -41,6 +41,8 @@ vi.mock('../../src/settings', () => ({
 		testConnection: vi.fn(),
 		normalizeServerUrl: vi.fn(),
 		setDeviceApi: vi.fn(),
+			setConnectHandler: vi.fn(),
+			setDisconnectHandler: vi.fn(),
 	})),
 	DEFAULT_SETTINGS: {
 		server_url: '',
@@ -155,7 +157,7 @@ describe('VSyncPlugin', () => {
 		it('설정이 구성된 경우 자동 동기화를 시작해야 한다', async () => {
 			plugin.loadData = vi.fn().mockResolvedValue({
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 				sync_interval: 30,
 			});
@@ -169,7 +171,7 @@ describe('VSyncPlugin', () => {
 		it('설정이 구성된 경우 초기 상태가 idle이어야 한다', async () => {
 			plugin.loadData = vi.fn().mockResolvedValue({
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 			});
 
@@ -401,7 +403,7 @@ describe('VSyncPlugin', () => {
 		it('onload 시 저장된 큐 데이터를 복원해야 한다', async () => {
 			plugin.loadData = vi.fn().mockResolvedValue({
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 				sync_interval: 30,
 				__offlineQueue: [
@@ -424,7 +426,7 @@ describe('VSyncPlugin', () => {
 		it('빈 큐 데이터 로드 시 정상 동작해야 한다', async () => {
 			plugin.loadData = vi.fn().mockResolvedValue({
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 			});
 
@@ -436,7 +438,7 @@ describe('VSyncPlugin', () => {
 		it('잘못된 큐 항목을 필터링해야 한다', async () => {
 			plugin.loadData = vi.fn().mockResolvedValue({
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 				__offlineQueue: [
 					{
@@ -478,7 +480,7 @@ describe('VSyncPlugin', () => {
 
 			plugin.loadData = vi.fn().mockResolvedValue({
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 				__offlineQueue: [
 					{
@@ -508,7 +510,7 @@ describe('VSyncPlugin', () => {
 
 			plugin.loadData = vi.fn().mockResolvedValue({
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 				__offlineQueue: [
 					{
@@ -833,7 +835,7 @@ describe('VSyncPlugin', () => {
 				it('설정 구성 시 onLayoutReady가 호출되어야 한다', async () => {
 					plugin.loadData = vi.fn().mockResolvedValue({
 						server_url: 'https://example.com',
-						api_key: 'test-key',
+						username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 						vault_id: 'vault-1',
 					});
 					plugin.app.workspace.onLayoutReady = vi.fn();

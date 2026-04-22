@@ -10,7 +10,7 @@ import '../mocks/obsidian';
 // @MX:NOTE 테스트용 설정
 const baseSettings = {
 	server_url: 'https://sync.example.com',
-	api_key: 'test-api-key',
+	username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 	vault_id: 'vault-1',
 	device_id: 'device-1',
 	sync_interval: 30,

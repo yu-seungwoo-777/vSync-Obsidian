@@ -21,17 +21,19 @@ describe('Type Definitions', () => {
 		it('기본 설정값이 올바른 구조를 가져야 한다', () => {
 			expect(DEFAULT_SETTINGS).toEqual({
 				server_url: '',
-				api_key: '',
+				username: '', password: '', session_token: '',
 				vault_id: '',
 				sync_interval: 30,
+				connection_mode: 'realtime',
 				device_id: '',
+				sync_enabled: false,
 			});
 		});
 
 		it('필수 필드가 모두 존재해야 한다', () => {
 			const keys = Object.keys(DEFAULT_SETTINGS);
 			expect(keys).toContain('server_url');
-			expect(keys).toContain('api_key');
+			expect(keys).toContain('session_token');
 			expect(keys).toContain('vault_id');
 			expect(keys).toContain('sync_interval');
 			expect(keys).toContain('device_id');
@@ -42,7 +44,7 @@ describe('Type Definitions', () => {
 		it('유효한 설정 객체를 true로 판별해야 한다', () => {
 			const valid: VSyncSettings = {
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				session_token: 'test-token',
 				vault_id: 'vault-1',
 				sync_interval: 30,
 				device_id: 'device-1',
@@ -53,7 +55,7 @@ describe('Type Definitions', () => {
 		it('lastEventId가 포함된 설정도 true여야 한다', () => {
 			const withCursor: VSyncSettings = {
 				server_url: 'https://example.com',
-				api_key: 'test-key',
+				session_token: 'test-token',
 				vault_id: 'vault-1',
 				sync_interval: 30,
 				device_id: 'device-1',
@@ -73,7 +75,7 @@ describe('Type Definitions', () => {
 			expect(
 				isVSyncSettings({
 					server_url: 123,
-					api_key: 'key',
+					session_token: 'key',
 					vault_id: 'v',
 					sync_interval: 30,
 					device_id: 'd',
