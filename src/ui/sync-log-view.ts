@@ -23,7 +23,7 @@ export class SyncLogView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		this.unsubscribe = syncLogger.on_update(() => this.render());
+		this.unsubscribe = syncLogger.onUpdate(() => this.render());
 		this.render();
 	}
 
@@ -70,7 +70,7 @@ export class SyncLogView extends ItemView {
 		// 로그 목록
 		const list = container.createDiv({ cls: 'sync-log-list' });
 
-		const entries = syncLogger.get_all().filter((e) =>
+		const entries = syncLogger.getAll().filter((e) =>
 			this.filter_level === 'all' || e.level === this.filter_level
 		);
 

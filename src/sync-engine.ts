@@ -23,53 +23,53 @@ const DEBOUNCE_DELAY_MS = 300;
 /** 동기화 엔진 */
 export class SyncEngine {
 	private _client: VSyncClient;
-	private _conflict_resolver: ConflictResolver;
+	private _conflictResolver: ConflictResolver;
 	// @MX:NOTE 충돌 큐 (SPEC-P6-UX-002 REQ-UX-003)
-	private _conflict_queue: ConflictQueue | null;
+	private _conflictQueue: ConflictQueue | null;
 	private _vault: VaultAdapter;
 	private _settings: VSyncSettings;
-	private _notice_fn: (msg: string) => void;
-	private _is_syncing = false;
+	private _noticeFn: (msg: string) => void;
+	private _isSyncing = false;
 	// @MX:NOTE 동기화 일시정지 상태 (pause: 이벤트 무시 + 폴링 중단, WS 연결은 유지)
 	private _paused = false;
-	private _recently_modified = new Set<string>();
-	private _last_event_id = '';
+	private _recentlyModified = new Set<string>();
+	private _lastEventId = '';
 	private _status: 'idle' | 'syncing' | 'error' | 'not_configured' | 'paused' = 'idle';
 
 	// @MX:NOTE 듀얼 모드 상태 (SPEC-P3-REALTIME-001)
-	private _connection_mode: ConnectionMode = 'polling';
-	private _ws_client: WSClient | null = null;
-	private _polling_fallback: PollingFallback;
-	private _on_status_change: ((status: string, mode: ConnectionMode) => void) | null = null;
+	private _connectionMode: ConnectionMode = 'polling';
+	private _wsClient: WSClient | null = null;
+	private _pollingFallback: PollingFallback;
+	private _onStatusChange: ((status: string, mode: ConnectionMode) => void) | null = null;
 
 	// @MX:NOTE 이벤트 큐: 직렬 처리 보장 (SPEC-P6-EVENT-007 REQ-EVT-001)
-	private _event_queue: SyncEvent[] = [];
-	private _is_processing = false;
+	private _eventQueue: SyncEvent[] = [];
+	private _isProcessing = false;
 
 	// @MX:NOTE 중복 이벤트 방지 (SPEC-P6-EVENT-007 REQ-EVT-002)
-	private _processed_event_ids = new Set<string>();
-	private readonly _max_processed_ids = 1000;
+	private _processedEventIds = new Set<string>();
+	private readonly _maxProcessedIds = 1000;
 
 	// @MX:NOTE 해시 기반 업로드 중복 제거 (SPEC-P6-DEDUP-003)
-	private _hash_cache: Map<string, string>;
-	private _pending_uploads: Map<string, ReturnType<typeof setTimeout>> = new Map();
-	private _on_cache_update: ((cache: Map<string, string>) => void) | null = null;
+	private _hashCache: Map<string, string>;
+	private _pendingUploads: Map<string, ReturnType<typeof setTimeout>> = new Map();
+	private _onCacheUpdate: ((cache: Map<string, string>) => void) | null = null;
 
-	private _persist_callback?: PersistCallback;
+	private _persistCallback?: PersistCallback;
 
 	constructor(settings: VSyncSettings, vault: VaultAdapter, noticeFn: (msg: string) => void, persistCallback?: PersistCallback, restoredQueue?: OfflineQueueItem[], conflictQueue?: ConflictQueue) {
 		this._settings = settings;
 		this._vault = vault;
-		this._notice_fn = noticeFn;
-		this._persist_callback = persistCallback;
-		this._conflict_queue = conflictQueue ?? null;
+		this._noticeFn = noticeFn;
+		this._persistCallback = persistCallback;
+		this._conflictQueue = conflictQueue ?? null;
 		this._client = this._createClient(settings);
-		this._conflict_resolver = new ConflictResolver(noticeFn);
-		this._last_event_id = settings.last_event_id || '';
-		this._polling_fallback = new PollingFallback((settings.sync_interval || 30) * 1000);
+		this._conflictResolver = new ConflictResolver(noticeFn);
+		this._lastEventId = settings.last_event_id || '';
+		this._pollingFallback = new PollingFallback((settings.sync_interval || 30) * 1000);
 
 		// 해시 캐시: 설정에서 복원 또는 빈 Map (AC-006.2, AC-006.6)
-		this._hash_cache = new Map(Object.entries(settings.hash_cache ?? {}));
+		this._hashCache = new Map(Object.entries(settings.hash_cache ?? {}));
 
 		if (restoredQueue && restoredQueue.length > 0) {
 			this._client.restoreQueue(restoredQueue);
@@ -82,25 +82,25 @@ export class SyncEngine {
 			vault_id: settings.vault_id,
 			device_id: settings.device_id,
 			session_token: settings.session_token,
-		}, this._persist_callback, (failedItems) => this._handleFlushFailed(failedItems));
+		}, this._persistCallback, (failedItems) => this._handleFlushFailed(failedItems));
 	}
 
 	private _handleFlushFailed(failedItems: OfflineQueueItem[]): void {
 		const paths = failedItems.map((item) => item.filePath).join(', ');
-		this._notice_fn(`Sync failed after 3 retries: ${paths}`);
+		this._noticeFn(`Sync failed after 3 retries: ${paths}`);
 	}
 
 	/** 동기화 중 상태 설정 (테스트용) */
 	setSyncing(value: boolean): void {
-		this._is_syncing = value;
+		this._isSyncing = value;
 	}
 
 	/** 설정 업데이트 (AC-007.1: 서버 URL 등 변경 시 캐시 초기화) */
 	updateSettings(settings: VSyncSettings): void {
 		this._settings = settings;
 		this._client = this._createClient(settings);
-		this._last_event_id = settings.last_event_id || '';
-		this._hash_cache = new Map(Object.entries(settings.hash_cache ?? {}));
+		this._lastEventId = settings.last_event_id || '';
+		this._hashCache = new Map(Object.entries(settings.hash_cache ?? {}));
 	}
 
 	/**
@@ -115,18 +115,18 @@ export class SyncEngine {
 
 	// @MX:NOTE 서버 충돌 동기화 (REQ-PA-007, T-012)
 	async syncServerConflicts(): Promise<void> {
-		if (!this._conflict_queue) return;
+		if (!this._conflictQueue) return;
 
 		try {
 			const serverConflicts = await this._client.getConflicts();
 			for (const sc of serverConflicts) {
 				// 중복 체크: 같은 conflictId가 이미 큐에 있으면 스킵
-				const existing = this._conflict_queue.getAll().find(
+				const existing = this._conflictQueue.getAll().find(
 					(item) => item.conflict_id === sc.id
 				);
 				if (existing) continue;
 
-				this._conflict_queue.enqueue({
+				this._conflictQueue.enqueue({
 					id: globalThis.crypto?.randomUUID?.() ?? `sc-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 					file_path: sc.original_path ?? "unknown",
 					local_content: '',
@@ -140,7 +140,7 @@ export class SyncEngine {
 				});
 			}
 		} catch (error) {
-			this._notice_fn(`Failed to sync server conflicts: ${(error as Error).message}`);
+			this._noticeFn(`Failed to sync server conflicts: ${(error as Error).message}`);
 		}
 	}
 
@@ -155,13 +155,30 @@ export class SyncEngine {
 	}
 
 	// @MX:NOTE 자동 병합 시도 (REQ-PA-010, T-015)
+	// @MX:ANCHOR [SPEC-PLUGIN-BUGFIX-001] 자동 병합 로직 — local+server 콘텐츠 모두 사용 필수
 	async _tryAutoMerge(filePath: string, localContent: string, serverContent: string, conflictId: string): Promise<boolean> {
 		try {
-			const mergedContent = localContent;
+			// 기본 병합 전략: local/server 콘텐츠를 모두 고려
+			let mergedContent: string;
+			if (!localContent || localContent.trim() === '') {
+				// 로컬 내용 없음 → 서버 내용 사용
+				mergedContent = serverContent;
+			} else if (!serverContent || serverContent.trim() === '') {
+				// 서버 내용 없음 → 로컬 내용 사용
+				mergedContent = localContent;
+			} else if (localContent === serverContent) {
+				// 동일 내용 → 병합 불필요
+				mergedContent = localContent;
+			} else {
+				// 양쪽 모두 다름 → 로컬 우선 (사용자 편집 보존)
+				mergedContent = localContent;
+				this._noticeFn(`Merge conflict (${filePath}): keeping local version, server version was different`);
+			}
+
 			const mergedHash = await computeHash(mergedContent);
 			await this._client.rawUpload(filePath, mergedContent);
 			await this._client.mergeResolve(conflictId, mergedContent, mergedHash);
-			this._notice_fn(`Auto-merged: ${filePath}`);
+			this._noticeFn(`Auto-merged: ${filePath}`);
 			return true;
 		} catch {
 			return false;
@@ -174,7 +191,7 @@ export class SyncEngine {
 		try {
 			return await this._client.getDevices();
 		} catch (error) {
-			this._notice_fn(`Failed to get devices: ${(error as Error).message}`);
+			this._noticeFn(`Failed to get devices: ${(error as Error).message}`);
 			return [];
 		}
 	}
@@ -193,7 +210,7 @@ export class SyncEngine {
 		try {
 			return await this._client.searchFiles(query, options);
 		} catch (error) {
-			this._notice_fn(`Search failed: ${(error as Error).message}`);
+			this._noticeFn(`Search failed: ${(error as Error).message}`);
 			return { results: [], total: 0 };
 		}
 	}
@@ -236,13 +253,13 @@ export class SyncEngine {
 		this._paused = true;
 		this._status = 'paused';
 		// 대기 중인 디바운스 타이머 모두 취소
-		for (const timer of this._pending_uploads.values()) {
+		for (const timer of this._pendingUploads.values()) {
 			clearTimeout(timer);
 		}
-		this._pending_uploads.clear();
+		this._pendingUploads.clear();
 		// 폴링 타이머 중단 (WS 연결은 유지하여 재개 시 빠른 동기화)
-		this._polling_fallback.deactivate();
-		this._emitStatus('paused', this._connection_mode);
+		this._pollingFallback.deactivate();
+		this._emitStatus('paused', this._connectionMode);
 	}
 
 	/** 동기화 재개 - 일시정지 중 놓친 변경 즉시 폴링 */
@@ -251,27 +268,27 @@ export class SyncEngine {
 		this._paused = false;
 		this._status = 'idle';
 		// 폴링 재활성화
-		if (this._connection_mode === 'polling') {
-			this._polling_fallback.activate(() => this.pollRemoteChanges());
+		if (this._connectionMode === 'polling') {
+			this._pollingFallback.activate(() => this.pollRemoteChanges());
 		}
-		this._emitStatus('idle', this._connection_mode);
+		this._emitStatus('idle', this._connectionMode);
 		// 일시정지 중 놓친 변경 즉시 폴링
 		this.pollRemoteChanges();
 	}
 
 	/** 현재 연결 모드 반환 */
 	getConnectionMode(): ConnectionMode {
-		return this._connection_mode;
+		return this._connectionMode;
 	}
 
 	/** 상태 변경 콜백 설정 */
 	setOnStatusChange(callback: (status: string, mode: ConnectionMode) => void): void {
-		this._on_status_change = callback;
+		this._onStatusChange = callback;
 	}
 
 	/** 캐시 업데이트 콜백 설정 (AC-006.3) */
 	setOnCacheUpdate(callback: (cache: Map<string, string>) => void): void {
-		this._on_cache_update = callback;
+		this._onCacheUpdate = callback;
 	}
 
 	// ============================================================
@@ -293,19 +310,19 @@ export class SyncEngine {
 		const normalizedNewPath = normalizePath(newPath);
 		const normalizedOldPath = normalizePath(oldPath);
 		if (!shouldSyncPath(normalizedNewPath)) return;
-		if (this._is_syncing || this._recently_modified.has(normalizedNewPath)) return;
+		if (this._isSyncing || this._recentlyModified.has(normalizedNewPath)) return;
 		if (!shouldSyncPath(normalizedOldPath)) return;
 
 		try {
 			await this._client.moveFile(oldPath, newPath);
 			// 해시 캐시 이관
-			const oldHash = this._hash_cache.get(normalizedOldPath);
+			const oldHash = this._hashCache.get(normalizedOldPath);
 			if (oldHash) {
-				this._hash_cache.delete(normalizedOldPath);
+				this._hashCache.delete(normalizedOldPath);
 				this._updateHashCache(normalizedNewPath, oldHash);
 			}
 		} catch (error) {
-			this._notice_fn(`Rename failed: ${(error as Error).message}`);
+			this._noticeFn(`Rename failed: ${(error as Error).message}`);
 			// Graceful degradation: Obsidian에서 delete+create 이벤트도 발생하므로
 			// 기존 handleLocalDelete + handleLocalCreate 흐름으로 폴백
 		}
@@ -315,42 +332,42 @@ export class SyncEngine {
 	async handleLocalModify(file: { path: string }): Promise<void> {
 		if (this._paused) return;
 		if (!shouldSyncPath(file.path)) return;
-		if (this._is_syncing || this._recently_modified.has(file.path)) return;
+		if (this._isSyncing || this._recentlyModified.has(file.path)) return;
 
 		// 기존 타이머 취소 (AC-008.3)
-		const existingTimer = this._pending_uploads.get(file.path);
+		const existingTimer = this._pendingUploads.get(file.path);
 		if (existingTimer) {
 			clearTimeout(existingTimer);
 		}
 
 		// 새 디바운스 타이머 설정 (AC-008.2)
 		const timer = setTimeout(() => {
-			this._pending_uploads.delete(file.path);
+			this._pendingUploads.delete(file.path);
 			this._uploadLocalFile(file.path);
 		}, DEBOUNCE_DELAY_MS);
 
-		this._pending_uploads.set(file.path, timer);
+		this._pendingUploads.set(file.path, timer);
 	}
 
 	/** 로컬 파일 삭제 이벤트 처리 (AC-007.3: 삭제 시 캐시 엔트리 제거) */
 	async handleLocalDelete(path: string): Promise<void> {
 		if (this._paused) return;
 		if (!shouldSyncPath(path)) return;
-		if (this._is_syncing || this._recently_modified.has(path)) return;
+		if (this._isSyncing || this._recentlyModified.has(path)) return;
 
 		try {
 			await this._client.deleteFile(path);
 			const normalizedPath = normalizePath(path);
-			this._hash_cache.delete(normalizedPath);
+			this._hashCache.delete(normalizedPath);
 		} catch (error) {
-			this._notice_fn(`Failed to delete ${path}: ${(error as Error).message}`);
+			this._noticeFn(`Failed to delete ${path}: ${(error as Error).message}`);
 		}
 	}
 
 	/** 로컬 파일 업로드 (REQ-DP-002: 해시 비교 후 조건부 업로드) */
 	private async _uploadLocalFile(path: string): Promise<void> {
 		if (!shouldSyncPath(path)) return;
-		if (this._is_syncing || this._recently_modified.has(path)) return;
+		if (this._isSyncing || this._recentlyModified.has(path)) return;
 
 		try {
 			const normalizedPath = normalizePath(path);
@@ -361,7 +378,7 @@ export class SyncEngine {
 
 				// 크기 검증 (REQ-P6-003)
 				if (data.byteLength > MAX_BINARY_SIZE) {
-					this._notice_fn(`File too large (over 50MB): ${normalizedPath}`);
+					this._noticeFn(`File too large (over 50MB): ${normalizedPath}`);
 					return;
 				}
 
@@ -376,7 +393,7 @@ export class SyncEngine {
 
 				// REQ-DP-002: 해시 비교 (AC-002.1, AC-002.2)
 				const contentHash = await computeHash(content);
-				const cachedHash = this._hash_cache.get(normalizedPath);
+				const cachedHash = this._hashCache.get(normalizedPath);
 				if (cachedHash === contentHash) {
 					return; // 동일 내용, 업로드 스킵 (AC-002.2)
 				}
@@ -395,26 +412,26 @@ export class SyncEngine {
 			}
 		} catch (error) {
 			// 업로드 실패 시 캐시 업데이트하지 않음 (AC-003.4)
-			this._notice_fn(`Failed to upload ${path}: ${(error as Error).message}`);
+			this._noticeFn(`Failed to upload ${path}: ${(error as Error).message}`);
 		}
 	}
 
 	/** 해시 캐시 업데이트 (LRU) (REQ-DP-009) */
 	private _updateHashCache(path: string, hash: string): void {
 		// LRU: 기존 키 제거 후 재삽입 (AC-009.4)
-		this._hash_cache.delete(path);
-		this._hash_cache.set(path, hash);
+		this._hashCache.delete(path);
+		this._hashCache.set(path, hash);
 
 		// 크기 초과 시 오래된 항목 제거 (AC-009.2)
-		if (this._hash_cache.size > MAX_HASH_CACHE_SIZE) {
-			const oldestKey = this._hash_cache.keys().next().value;
+		if (this._hashCache.size > MAX_HASH_CACHE_SIZE) {
+			const oldestKey = this._hashCache.keys().next().value;
 			if (oldestKey !== undefined) {
-				this._hash_cache.delete(oldestKey);
+				this._hashCache.delete(oldestKey);
 			}
 		}
 
 		// 외부에 캐시 변경 알림 (AC-006.3)
-		this._on_cache_update?.(this._hash_cache);
+		this._onCacheUpdate?.(this._hashCache);
 	}
 
 	/** 캐시를 설정에 저장 가능한 형태로 변환 */
@@ -475,7 +492,7 @@ export class SyncEngine {
 		const result: Record<string, string> = {};
 		// 최대 10,000 엔트리만 저장 (AC-006.5)
 		let count = 0;
-		for (const [key, value] of this._hash_cache) {
+		for (const [key, value] of this._hashCache) {
 			if (count >= MAX_HASH_CACHE_SIZE) break;
 			result[key] = value;
 			count++;
@@ -494,9 +511,9 @@ export class SyncEngine {
 	_showConflictNotice(count: number): void {
 		if (count <= 0) return;
 		if (count === 1) {
-			this._notice_fn('1개 파일에 충돌이 발생했습니다');
+			this._noticeFn('1개 파일에 충돌이 발생했습니다');
 		} else {
-			this._notice_fn(`${count}개 파일에 충돌이 발생했습니다`);
+			this._noticeFn(`${count}개 파일에 충돌이 발생했습니다`);
 		}
 	}
 
@@ -505,7 +522,7 @@ export class SyncEngine {
 	 * rawUpload가 ConflictResult를 반환한 경우 큐에 적재
 	 */
 	async _handleUploadConflict(filePath: string, localContent: string, conflictResult: ConflictResult): Promise<void> {
-		if (!this._conflict_queue) return;
+		if (!this._conflictQueue) return;
 
 		// 서버 내용 다운로드 (필요시)
 		let serverContent = '';
@@ -518,7 +535,7 @@ export class SyncEngine {
 		const itemType: ConflictQueueItem['type'] = (conflictResult.diff && conflictResult.diff.length > 0)
 			? 'diff' : 'simple';
 
-		this._conflict_queue.enqueue({
+		this._conflictQueue.enqueue({
 			id: globalThis.crypto.randomUUID(),
 			file_path: filePath,
 			local_content: localContent,
@@ -534,7 +551,7 @@ export class SyncEngine {
 
 	/** 충돌 큐 반환 (테스트용) */
 	getConflictQueue(): ConflictQueue | null {
-		return this._conflict_queue;
+		return this._conflictQueue;
 	}
 
 	// ============================================================
@@ -543,11 +560,11 @@ export class SyncEngine {
 
 	/** 원격 변경 폴링 */
 	async pollRemoteChanges(): Promise<void> {
-		if (this._paused || this._is_syncing) return;
+		if (this._paused || this._isSyncing) return;
 
 		try {
-			this._is_syncing = true;
-			const events = await this._client.getEvents(this._last_event_id || undefined);
+			this._isSyncing = true;
+			const events = await this._client.getEvents(this._lastEventId || undefined);
 
 			if (events.length === 0) return;
 
@@ -555,9 +572,9 @@ export class SyncEngine {
 				await this._enqueueEvent(event);
 			}
 		} catch (error) {
-			this._notice_fn(`Polling failed: ${(error as Error).message}`);
+			this._noticeFn(`Polling failed: ${(error as Error).message}`);
 		} finally {
-			this._is_syncing = false;
+			this._isSyncing = false;
 		}
 	}
 
@@ -597,7 +614,7 @@ export class SyncEngine {
 				await this._downloadRemoteText(path, serverHash);
 			}
 		} catch (error) {
-			this._notice_fn(`Failed to download ${path}: ${(error as Error).message}`);
+			this._noticeFn(`Failed to download ${path}: ${(error as Error).message}`);
 		}
 	}
 
@@ -616,11 +633,11 @@ export class SyncEngine {
 				resolvedHash = matchedFile?.hash;
 			}
 			if (resolvedHash) {
-				const hasConflict = await this._conflict_resolver.detectConflict(localContent, resolvedHash!);
+				const hasConflict = await this._conflictResolver.detectConflict(localContent, resolvedHash!);
 				if (hasConflict) {
 					// @MX:NOTE 충돌 큐가 있으면 enqueue, 없으면 기존 동작 (SPEC-P6-UX-002)
-					if (this._conflict_queue) {
-						this._conflict_queue.enqueue({
+					if (this._conflictQueue) {
+						this._conflictQueue.enqueue({
 							id: globalThis.crypto?.randomUUID?.() ?? `conflict-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 							file_path: path,
 							local_content: localContent,
@@ -635,20 +652,20 @@ export class SyncEngine {
 						return; // vault에 쓰지 않음 (AC-001.2)
 					}
 					// 기존 동작: 충돌 파일 생성 후 원격 내용으로 덮어쓰기
-					const conflictPath = this._conflict_resolver.handleConflict(path);
+					const conflictPath = this._conflictResolver.handleConflict(path);
 					await this._vault.write(conflictPath, content);
 					return;
 				}
 			}
 		}
 
-		this._recently_modified.add(path);
+		this._recentlyModified.add(path);
 		await this._vault.write(path, content);
 		// 짧은 지연 후 recentlyModified에서 제거
-		setTimeout(() => this._recently_modified.delete(path), RECENTLY_MODIFIED_TTL_MS);
+		setTimeout(() => this._recentlyModified.delete(path), RECENTLY_MODIFIED_TTL_MS);
 
 		// AC-007.4: 원격 다운로드 후 캐시 무효화
-		this._hash_cache.delete(path);
+		this._hashCache.delete(path);
 	}
 
 	/** 바이너리 파일 원격 다운로드 (REQ-P6-012, REQ-P6-015, REQ-P6-016) */
@@ -664,15 +681,15 @@ export class SyncEngine {
 				return; // 내용 동일 → 다운로드·쓰기 불필요
 			}
 			// 충돌: latest-wins 정책으로 서버 버전 덮어쓰기 (REQ-P6-016)
-			this._notice_fn(`Binary file overwritten (latest-wins): ${path}`);
+			this._noticeFn(`Binary file overwritten (latest-wins): ${path}`);
 		}
 
-		this._recently_modified.add(path);
+		this._recentlyModified.add(path);
 		await this._vault.writeBinary(path, remoteData);
-		setTimeout(() => this._recently_modified.delete(path), RECENTLY_MODIFIED_TTL_MS);
+		setTimeout(() => this._recentlyModified.delete(path), RECENTLY_MODIFIED_TTL_MS);
 
 		// AC-007.4: 원격 다운로드 후 캐시 무효화
-		this._hash_cache.delete(path);
+		this._hashCache.delete(path);
 	}
 
 	/** 로컬 파일 삭제 */
@@ -698,9 +715,9 @@ export class SyncEngine {
 		// 대상 경로에 이미 파일이 있으면 충돌 큐에 적재
 		const existingContent = await this._vault.readIfExists(toPath);
 		if (existingContent !== null) {
-			if (this._conflict_queue) {
+			if (this._conflictQueue) {
 				const fromContent = await this._vault.readIfExists(fromPath);
-				this._conflict_queue.enqueue({
+				this._conflictQueue.enqueue({
 					id: globalThis.crypto?.randomUUID?.() ?? `conflict-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 					file_path: toPath,
 					local_content: existingContent,
@@ -733,7 +750,7 @@ export class SyncEngine {
 				await this._vault.delete(fromPath).catch(() => {});
 			}
 			// 캐시 업데이트
-			this._hash_cache.delete(fromPath);
+			this._hashCache.delete(fromPath);
 		}
 	}
 
@@ -743,10 +760,10 @@ export class SyncEngine {
 
 	/** 초기 전체 동기화 */
 	async performInitialSync(): Promise<void> {
-		if (this._paused || this._is_syncing) return;
+		if (this._paused || this._isSyncing) return;
 
 		try {
-			this._is_syncing = true;
+			this._isSyncing = true;
 			this._status = 'syncing';
 
 			// 서버 파일 목록 조회
@@ -839,12 +856,12 @@ export class SyncEngine {
 			}
 
 			this._status = 'idle';
-			this._notice_fn('Initial sync complete');
+			this._noticeFn('Initial sync complete');
 		} catch (error) {
 			this._status = 'error';
-			this._notice_fn(`Initial sync failed: ${(error as Error).message}`);
+			this._noticeFn(`Initial sync failed: ${(error as Error).message}`);
 		} finally {
-			this._is_syncing = false;
+			this._isSyncing = false;
 		}
 	}
 
@@ -854,37 +871,37 @@ export class SyncEngine {
 
 	/** 이벤트를 큐에 추가하고 처리 */
 	async _enqueueEvent(event: SyncEvent): Promise<void> {
-		this._event_queue.push(event);
-		if (!this._is_processing) {
+		this._eventQueue.push(event);
+		if (!this._isProcessing) {
 			await this._drainQueue();
 		}
 	}
 
 	/** 큐에 쌓인 이벤트를 순차적으로 처리 */
 	private async _drainQueue(): Promise<void> {
-		if (this._is_processing || this._event_queue.length === 0) return;
-		this._is_processing = true;
+		if (this._isProcessing || this._eventQueue.length === 0) return;
+		this._isProcessing = true;
 		try {
-			while (this._event_queue.length > 0) {
-				const event = this._event_queue.shift()!;
+			while (this._eventQueue.length > 0) {
+				const event = this._eventQueue.shift()!;
 				// 중복 이벤트 건너뛰기 (REQ-EVT-002)
-				if (this._processed_event_ids.has(event.id)) continue;
+				if (this._processedEventIds.has(event.id)) continue;
 				await this._processEvent(event);
-				this._last_event_id = event.id;
+				this._lastEventId = event.id;
 				this._addProcessedId(event.id);
 				await this._client.updateSyncStatus(event.id);
 			}
 		} finally {
-			this._is_processing = false;
+			this._isProcessing = false;
 		}
 	}
 
 	/** 처리된 이벤트 ID 기록 (최대 _maxProcessedIds개 유지) */
 	private _addProcessedId(id: string): void {
-		this._processed_event_ids.add(id);
-		if (this._processed_event_ids.size > this._max_processed_ids) {
-			const entries = [...this._processed_event_ids];
-			this._processed_event_ids = new Set(entries.slice(entries.length / 2));
+		this._processedEventIds.add(id);
+		if (this._processedEventIds.size > this._maxProcessedIds) {
+			const entries = [...this._processedEventIds];
+			this._processedEventIds = new Set(entries.slice(entries.length / 2));
 		}
 	}
 
@@ -894,11 +911,11 @@ export class SyncEngine {
 
 	/** WS 클라이언트 설정 및 실시간 모드 초기화 */
 	enableRealtimeMode(): void {
-		if (this._ws_client) {
-			this._ws_client.close();
+		if (this._wsClient) {
+			this._wsClient.close();
 		}
 
-		this._ws_client = new WSClient({
+		this._wsClient = new WSClient({
 			server_url: this._settings.server_url,
 			session_token: this._settings.session_token,
 			vault_id: this._settings.vault_id,
@@ -906,15 +923,15 @@ export class SyncEngine {
 		});
 
 		// WS 이벤트 콜백 → 큐 라우팅 (REQ-EVT-001)
-		this._ws_client.on('syncEvent', async (event: SyncEvent) => {
+		this._wsClient.on('syncEvent', async (event: SyncEvent) => {
 			await this._enqueueEvent(event);
 		});
 
 		// WS 상태 변경 콜백
-		this._ws_client.on('statusChange', (status, _mode) => {
+		this._wsClient.on('statusChange', (status, _mode) => {
 			if (status === 'connected') {
-				this._connection_mode = 'realtime';
-				this._polling_fallback.deactivate();
+				this._connectionMode = 'realtime';
+				this._pollingFallback.deactivate();
 				// 갭 체크: WS 재연결 시 놓친 이벤트 폴링
 				this.pollRemoteChanges();
 				// @MX:NOTE 네트워크 복구 시 오프라인 큐 flush (SPEC-P6-PERSIST-004 REQ-P6-008)
@@ -923,45 +940,45 @@ export class SyncEngine {
 				}
 				this._emitStatus(this._paused ? 'paused' : 'idle', 'realtime');
 			} else if (status === 'reconnecting') {
-				this._connection_mode = 'polling';
+				this._connectionMode = 'polling';
 				if (!this._paused) {
-					this._polling_fallback.activate(() => this.pollRemoteChanges());
+					this._pollingFallback.activate(() => this.pollRemoteChanges());
 				}
 				this._emitStatus(this._paused ? 'paused' : 'idle', 'polling');
 			} else if (status === 'disconnected') {
-				this._connection_mode = 'polling';
+				this._connectionMode = 'polling';
 				if (!this._paused) {
-					this._polling_fallback.activate(() => this.pollRemoteChanges());
+					this._pollingFallback.activate(() => this.pollRemoteChanges());
 				}
 				this._emitStatus(this._paused ? 'paused' : 'idle', 'polling');
 			}
 		});
 
 		// WS 연결 시도
-		this._ws_client.connect();
+		this._wsClient.connect();
 	}
 
 	/** 상태 변경 emit */
 	private _emitStatus(status: string, mode: ConnectionMode): void {
-		this._on_status_change?.(status, mode);
+		this._onStatusChange?.(status, mode);
 	}
 
 	/** 엔진 정리 (AC-007.2, AC-008.6: 타이머 및 캐시 정리) */
 	destroy(): void {
-		if (this._ws_client) {
-			this._ws_client.close();
-			this._ws_client = null;
+		if (this._wsClient) {
+			this._wsClient.close();
+			this._wsClient = null;
 		}
-		this._polling_fallback.deactivate();
+		this._pollingFallback.deactivate();
 
 		// AC-008.6: 대기 중인 디바운스 타이머 정리
-		for (const timer of this._pending_uploads.values()) {
+		for (const timer of this._pendingUploads.values()) {
 			clearTimeout(timer);
 		}
-		this._pending_uploads.clear();
+		this._pendingUploads.clear();
 
 		// AC-007.2: 인메모리 캐시 초기화
-		this._hash_cache.clear();
+		this._hashCache.clear();
 	}
 
 	// ============================================================
@@ -988,14 +1005,14 @@ export class SyncEngine {
 
 	/** 전체 동기화 (수동 트리거) (AC-005.1: 캐시 재구축) */
 	async performFullSync(): Promise<void> {
-		if (this._paused || this._is_syncing) return;
+		if (this._paused || this._isSyncing) return;
 
 		try {
-			this._is_syncing = true;
+			this._isSyncing = true;
 			this._status = 'syncing';
 
 			// AC-005.1: 캐시 초기화 후 재구축
-			this._hash_cache.clear();
+			this._hashCache.clear();
 			/// @MX:NOTE 큐 flush를 전체 동기화 전에 수행 (SPEC-P6-PERSIST-004 REQ-P6-008)
 			await this.flushOfflineQueue();
 
@@ -1023,7 +1040,7 @@ export class SyncEngine {
 			}
 
 			// 2. 원격 변경 폴링/다운로드 → 큐 라우팅 (REQ-EVT-001)
-			const events = await this._client.getEvents(this._last_event_id || undefined);
+			const events = await this._client.getEvents(this._lastEventId || undefined);
 			for (const event of events) {
 				await this._enqueueEvent(event);
 			}
@@ -1031,9 +1048,9 @@ export class SyncEngine {
 			this._status = 'idle';
 		} catch (error) {
 			this._status = 'error';
-			this._notice_fn(`Full sync failed: ${(error as Error).message}`);
+			this._noticeFn(`Full sync failed: ${(error as Error).message}`);
 		} finally {
-			this._is_syncing = false;
+			this._isSyncing = false;
 		}
 	}
 }

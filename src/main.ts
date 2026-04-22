@@ -240,7 +240,7 @@ export default class VSyncPlugin extends Plugin {
 
 	/** 큐에서 항목 찾기 (공통 헬퍼) */
 	private _findQueueItem(itemId: string): ConflictQueueItem | undefined {
-		return this.conflictQueue.getAll().find((i: ConflictQueueItem) => i.id === itemId);
+		return this.conflictQueue.getAll().find((i) => i.id === itemId);
 	}
 
 	/** 충돌 해결: 로컬 유지 (AC-008.1) */
@@ -367,36 +367,36 @@ export default class VSyncPlugin extends Plugin {
 		this.updateStatus('idle');
 	}
 
-		/** 동기화 토글 (켜기/끄기) */
-		private async _toggleSync(): Promise<void> {
-			if (!this._syncEngine) return;
+	/** 동기화 토글 (켜기/끄기) */
+	private async _toggleSync(): Promise<void> {
+		if (!this._syncEngine) return;
 
-			if (this._syncEngine.isPaused) {
-				this.resumeSync();
-			} else {
-				this.pauseSync();
-			}
+		if (this._syncEngine.isPaused) {
+			this.resumeSync();
+		} else {
+			this.pauseSync();
 		}
+	}
 
-		/** 동기화 일시정지 (설정 탭 및 토글에서 사용) */
-		pauseSync(): void {
-			if (this._syncEngine) {
-				this._syncEngine.pause();
-				this.settings.sync_enabled = false;
-				this.updateStatus('paused');
-				this.saveSettings();
-			}
+	/** 동기화 일시정지 (설정 탭 및 토글에서 사용) */
+	pauseSync(): void {
+		if (this._syncEngine) {
+			this._syncEngine.pause();
+			this.settings.sync_enabled = false;
+			this.updateStatus('paused');
+			this.saveSettings();
 		}
+	}
 
-		/** 동기화 재개 (설정 탭 및 토글에서 사용) */
-		resumeSync(): void {
-			if (this._syncEngine) {
-				this._syncEngine.resume();
-				this.settings.sync_enabled = true;
-				this.updateStatus('idle');
-				this.saveSettings();
-			}
+	/** 동기화 재개 (설정 탭 및 토글에서 사용) */
+	resumeSync(): void {
+		if (this._syncEngine) {
+			this._syncEngine.resume();
+			this.settings.sync_enabled = true;
+			this.updateStatus('idle');
+			this.saveSettings();
 		}
+	}
 
 
 	/** 연결 설정 적용 후 동기화 시작 (모달에서 호출) */
@@ -505,12 +505,12 @@ export default class VSyncPlugin extends Plugin {
 			},
 		});
 
-			// 동기화 켜기/끄기 토글
-			this.addCommand({
-				id: 'vsync-toggle-sync',
-				name: 'Toggle Sync On/Off',
-				callback: () => this._toggleSync(),
-			});
+		// 동기화 켜기/끄기 토글
+		this.addCommand({
+			id: 'vsync-toggle-sync',
+			name: 'Toggle Sync On/Off',
+			callback: () => this._toggleSync(),
+		});
 	}
 
 	/** 충돌 해결 뷰 활성화 (REQ-UX-009) */
@@ -587,12 +587,23 @@ export default class VSyncPlugin extends Plugin {
 
 	private static readonly OFFLINE_QUEUE_KEY = '__offlineQueue';
 
+	// @MX:NOTE [SPEC-PLUGIN-BUGFIX-001] 바이너리 파일 큐 제외 시 사용자 알림
 	/** 큐를 data.json에 영속화 (SPEC-P6-PERSIST-004) */
 	private async _persistQueue(items: OfflineQueueItem[]): Promise<void> {
 		try {
+			const binaryItems = items.filter(
+				(item) => item.content instanceof ArrayBuffer
+			);
 			const serializable = items.filter(
 				(item) => !(item.content instanceof ArrayBuffer)
 			);
+
+			// 바이너리 항목이 제외되면 사용자에게 알림 (REQ-009)
+			if (binaryItems.length > 0) {
+				const fileNames = binaryItems.map((item) => item.filePath).join(', ');
+				new Notice(`오프라인 큐에서 ${binaryItems.length}개 바이너리 파일이 제외되었습니다: ${fileNames}`);
+			}
+
 			const data = (await this.loadData()) as Record<string, unknown> ?? {};
 			data[VSyncPlugin.OFFLINE_QUEUE_KEY] = serializable;
 			await this.saveData(data);
@@ -611,6 +622,7 @@ export default class VSyncPlugin extends Plugin {
 	}
 
 	/** 큐 항목 스키마 검증 (SPEC-P6-PERSIST-004) */
+	// @MX:WARN [SPEC-PLUGIN-BUGFIX-001] 오프라인 큐 복원 핵심 검증 — retryCount 프로퍼티명 변경 금지
 	private _isValidQueueItem(item: unknown): boolean {
 		if (typeof item !== 'object' || item === null) return false;
 		const obj = item as Record<string, unknown>;
@@ -619,7 +631,7 @@ export default class VSyncPlugin extends Plugin {
 			typeof obj.operation === 'string' &&
 			(obj.operation === 'upload' || obj.operation === 'delete') &&
 			typeof obj.timestamp === 'number' &&
-			typeof obj.retry_count === 'number'
+			typeof obj.retryCount === 'number'
 		);
 	}
 

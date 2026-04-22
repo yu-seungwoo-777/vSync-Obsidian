@@ -293,7 +293,7 @@ export class ConnectModal extends Modal {
 		const newSettings: Partial<VSyncSettings> = {
 			server_url: this._serverUrl,
 			username: this._username,
-			password: this._password,
+			password: '', // REQ-004: 평문 비밀번호 저장 방지
 			session_token: this._loginResult.token,
 			vault_id: this._selectedVaultId,
 		};

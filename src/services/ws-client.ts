@@ -34,24 +34,24 @@ export type OnSyncEvent = (event: SyncEvent) => void;
  * @MX:REASON 실시간 동기화의 클라이언트 핵심, 플러그인 생명주기와 연결됨
  */
 export class WSClient {
-	private _server_url: string;
-	private _session_token: string;
-	private _vault_id: string;
-	private _device_id: string;
+	private _serverUrl: string;
+	private _sessionToken: string;
+	private _vaultId: string;
+	private _deviceId: string;
 
 	private _ws: WebSocket | null = null;
-	private _is_intentional_close = false;
-	private _reconnect_attempts = 0;
-	private _reconnect_timer: ReturnType<typeof setTimeout> | null = null;
+	private _isIntentionalClose = false;
+	private _reconnectAttempts = 0;
+	private _reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
-	private _heartbeat_interval: ReturnType<typeof setInterval> | null = null;
-	private _missed_pongs = 0;
+	private _heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+	private _missedPongs = 0;
 
-	private _on_sync_event: OnSyncEvent | null = null;
-	private _on_status_change: OnStatusChange | null = null;
+	private _onSyncEvent: OnSyncEvent | null = null;
+	private _onStatusChange: OnStatusChange | null = null;
 
 	// 테스트용 주입 가능한 타이머/설정
-	private _heartbeat_interval_ms: number;
+	private _heartbeatIntervalMs: number;
 
 	constructor(options: {
 		server_url: string;
@@ -60,11 +60,11 @@ export class WSClient {
 		device_id: string;
 		heartbeat_interval_ms?: number;
 	}) {
-		this._server_url = options.server_url;
-		this._session_token = options.session_token;
-		this._vault_id = options.vault_id;
-		this._device_id = options.device_id;
-		this._heartbeat_interval_ms = options.heartbeat_interval_ms ?? HEARTBEAT_INTERVAL_MS;
+		this._serverUrl = options.server_url;
+		this._sessionToken = options.session_token;
+		this._vaultId = options.vault_id;
+		this._deviceId = options.device_id;
+		this._heartbeatIntervalMs = options.heartbeat_interval_ms ?? HEARTBEAT_INTERVAL_MS;
 	}
 
 	/** 이벤트 콜백 설정 */
@@ -73,9 +73,9 @@ export class WSClient {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any -- EventEmitter overload catch-all, handler type varies by event
 	on(event: string, handler: any): void {
 		if (event === 'syncEvent') {
-			this._on_sync_event = handler;
+			this._onSyncEvent = handler;
 		} else if (event === 'statusChange') {
-			this._on_status_change = handler;
+			this._onStatusChange = handler;
 		}
 	}
 
@@ -86,12 +86,12 @@ export class WSClient {
 
 	/** 재연결 시도 횟수 */
 	get reconnectAttempts(): number {
-		return this._reconnect_attempts;
+		return this._reconnectAttempts;
 	}
 
 	/** 서버 URL → WebSocket URL 변환 */
 	buildWSUrl(): string {
-		let wsUrl = this._server_url;
+		let wsUrl = this._serverUrl;
 
 		// trailing slash 제거
 		if (wsUrl.endsWith('/')) {
@@ -105,21 +105,21 @@ export class WSClient {
 			wsUrl = 'ws://' + wsUrl.slice(7);
 		}
 
-		return `${wsUrl}/ws/sync/${this._vault_id}?token=${this._session_token}`;
+		return `${wsUrl}/ws/sync/${this._vaultId}?token=${this._sessionToken}`;
 	}
 
 	/** WebSocket 연결 */
 	connect(): void {
-		this._is_intentional_close = false;
-		this._reconnect_attempts = 0;
+		this._isIntentionalClose = false;
+		this._reconnectAttempts = 0;
 
 		const url = this.buildWSUrl();
 		this._ws = new WebSocket(url);
 
 		this._ws.onopen = () => {
-			this._reconnect_attempts = 0;
+			this._reconnectAttempts = 0;
 			this._startHeartbeat();
-			this._on_status_change?.('connected', 'realtime');
+			this._onStatusChange?.('connected', 'realtime');
 		};
 
 		this._ws.onmessage = (event) => {
@@ -128,11 +128,11 @@ export class WSClient {
 
 		this._ws.onclose = () => {
 			this._stopHeartbeat();
-			if (!this._is_intentional_close) {
-				this._on_status_change?.('reconnecting', 'polling');
+			if (!this._isIntentionalClose) {
+				this._onStatusChange?.('reconnecting', 'polling');
 				this._scheduleReconnect();
 			} else {
-				this._on_status_change?.('disconnected', 'polling');
+				this._onStatusChange?.('disconnected', 'polling');
 			}
 		};
 
@@ -143,7 +143,7 @@ export class WSClient {
 
 	/** WebSocket 연결 종료 */
 	close(): void {
-		this._is_intentional_close = true;
+		this._isIntentionalClose = true;
 		this._stopHeartbeat();
 		this._clearReconnectTimer();
 
@@ -152,7 +152,7 @@ export class WSClient {
 			this._ws = null;
 		}
 
-		this._on_status_change?.('disconnected', 'polling');
+		this._onStatusChange?.('disconnected', 'polling');
 	}
 
 	/** 메시지 처리 */
@@ -165,12 +165,12 @@ export class WSClient {
 					// 연결 성공 확인
 					break;
 				case 'sync_event':
-					if (msg.data && this._on_sync_event) {
-						this._on_sync_event(this._convertToSyncEvent(msg.data));
+					if (msg.data && this._onSyncEvent) {
+						this._onSyncEvent(this._convertToSyncEvent(msg.data));
 					}
 					break;
 				case 'pong':
-					this._missed_pongs = 0;
+					this._missedPongs = 0;
 					break;
 			}
 		} catch {
@@ -193,53 +193,53 @@ export class WSClient {
 	/** 하트비트 시작 */
 	private _startHeartbeat(): void {
 		this._stopHeartbeat();
-		this._missed_pongs = 0;
+		this._missedPongs = 0;
 
-		this._heartbeat_interval = setInterval(() => {
+		this._heartbeatInterval = setInterval(() => {
 			if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
 				this._stopHeartbeat();
 				return;
 			}
 
 			// ping 전송 전 누락 체크
-			if (this._missed_pongs >= MAX_MISSED_PONGS) {
+			if (this._missedPongs >= MAX_MISSED_PONGS) {
 				// 연결이 죽은 것으로 간주, 재연결 트리거
 				this._stopHeartbeat();
 				this._ws.close();
 				return;
 			}
 
-			this._missed_pongs++;
+			this._missedPongs++;
 			this._ws.send(JSON.stringify({ type: 'ping' }));
-		}, this._heartbeat_interval_ms);
+		}, this._heartbeatIntervalMs);
 	}
 
 	/** 하트비트 중지 */
 	private _stopHeartbeat(): void {
-		if (this._heartbeat_interval) {
-			clearInterval(this._heartbeat_interval);
-			this._heartbeat_interval = null;
+		if (this._heartbeatInterval) {
+			clearInterval(this._heartbeatInterval);
+			this._heartbeatInterval = null;
 		}
 	}
 
 	/** 재연결 예약 */
 	private _scheduleReconnect(): void {
-		if (this._is_intentional_close) return;
+		if (this._isIntentionalClose) return;
 
-		const delay = calculateReconnectDelay(this._reconnect_attempts);
-		this._reconnect_attempts++;
+		const delay = calculateReconnectDelay(this._reconnectAttempts);
+		this._reconnectAttempts++;
 
-		this._reconnect_timer = setTimeout(() => {
-			this._reconnect_timer = null;
+		this._reconnectTimer = setTimeout(() => {
+			this._reconnectTimer = null;
 			this.connect();
 		}, delay);
 	}
 
 	/** 재연결 타이머 해제 */
 	private _clearReconnectTimer(): void {
-		if (this._reconnect_timer) {
-			clearTimeout(this._reconnect_timer);
-			this._reconnect_timer = null;
+		if (this._reconnectTimer) {
+			clearTimeout(this._reconnectTimer);
+			this._reconnectTimer = null;
 		}
 	}
 }

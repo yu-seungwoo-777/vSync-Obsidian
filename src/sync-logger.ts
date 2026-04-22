@@ -27,7 +27,7 @@ export class SyncLogger {
 	warn(message: string): void { this.log('warn', message); }
 	error(message: string): void { this.log('error', message); }
 
-	get_all(): LogEntry[] {
+	getAll(): LogEntry[] {
 		return [...this.entries];
 	}
 
@@ -36,7 +36,7 @@ export class SyncLogger {
 		for (const fn of this.listeners) fn();
 	}
 
-	on_update(fn: () => void): () => void {
+	onUpdate(fn: () => void): () => void {
 		this.listeners.push(fn);
 		return () => {
 			this.listeners = this.listeners.filter((f) => f !== fn);

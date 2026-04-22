@@ -201,7 +201,7 @@ export async function login(
 	const response = await requestUrl({
 		url,
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
+		contentType: 'application/json',
 		body: JSON.stringify({ username, password, device_id: deviceId }),
 	});
 	return response.json as LoginResult;
@@ -223,37 +223,37 @@ export async function fetchVaults(
 }
 
 export class VSyncClient {
-	private _base_url: string;
-	private _vault_id: string;
-	private _device_id: string;
-	private _session_token: string;
-	private _offline_queue: OfflineQueueItem[] = [];
-	private _on_auth_failure?: () => void;
-	private _persist_callback: PersistCallback;
-	private _on_flush_failed?: FlushFailedCallback;
-	private _is_flushing = false;
+	private _baseUrl: string;
+	private _vaultId: string;
+	private _deviceId: string;
+	private _sessionToken: string;
+	private _offlineQueue: OfflineQueueItem[] = [];
+	private _onAuthFailure?: () => void;
+	private _persistCallback: PersistCallback;
+	private _onFlushFailed?: FlushFailedCallback;
+	private _isFlushing = false;
 
 	constructor(settings: ClientSettings, persistCallback?: PersistCallback, onFlushFailed?: FlushFailedCallback) {
 		// trailing slash 제거
-		this._base_url = settings.server_url.replace(/\/+$/, '');
-		this._vault_id = settings.vault_id;
-		this._device_id = settings.device_id;
-		this._session_token = settings.session_token;
-		this._persist_callback = persistCallback ?? (() => {});
-		this._on_flush_failed = onFlushFailed;
+		this._baseUrl = settings.server_url.replace(/\/+$/, '');
+		this._vaultId = settings.vault_id;
+		this._deviceId = settings.device_id;
+		this._sessionToken = settings.session_token;
+		this._persistCallback = persistCallback ?? (() => {});
+		this._onFlushFailed = onFlushFailed;
 	}
 
 	/** 설정 업데이트 */
 	updateSettings(settings: ClientSettings): void {
-		this._base_url = settings.server_url.replace(/\/+$/, '');
-		this._vault_id = settings.vault_id;
-		this._device_id = settings.device_id;
-		this._session_token = settings.session_token;
+		this._baseUrl = settings.server_url.replace(/\/+$/, '');
+		this._vaultId = settings.vault_id;
+		this._deviceId = settings.device_id;
+		this._sessionToken = settings.session_token;
 	}
 
 	/** 인증 실패 콜백 설정 */
 	setOnAuthFailure(callback: () => void): void {
-		this._on_auth_failure = callback;
+		this._onAuthFailure = callback;
 	}
 
 	// ============================================================
@@ -263,7 +263,7 @@ export class VSyncClient {
 	/** 파일 업로드 - PUT /v1/vault/{id}/raw/{path} */
 	// @MX:NOTE 409 시 ConflictResult 반환, 나머지 에러는 throw (REQ-UX-002)
 	async rawUpload(path: string, content: string): Promise<UploadResult | ConflictResult> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'raw', encodeURIComponent(path));
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'raw', encodeURIComponent(path));
 
 		try {
 			const response = await requestUrl({
@@ -297,7 +297,7 @@ export class VSyncClient {
 
 	/** 파일 다운로드 - GET /v1/vault/{id}/raw/{path} */
 	async rawDownload(path: string): Promise<string> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'raw', encodeURIComponent(path));
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'raw', encodeURIComponent(path));
 
 		try {
 			const response = await requestUrl({
@@ -313,8 +313,9 @@ export class VSyncClient {
 	}
 
 	/** 파일 삭제 - DELETE /v1/vault/{id}/file/{path} */
+	// @MX:NOTE [SPEC-PLUGIN-BUGFIX-001] deleteFile 경로 인코딩 필수 — 비ASCII 파일명 삭제 실패 방지
 	async deleteFile(path: string): Promise<void> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'file', path);
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'file', encodeURIComponent(path));
 
 		try {
 			await requestUrl({
@@ -343,7 +344,7 @@ export class VSyncClient {
 
 	/** 바이너리 파일 업로드 - PUT /v1/vault/{id}/attachment/{path} */
 	async uploadAttachment(path: string, data: ArrayBuffer): Promise<UploadResult> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'attachment', encodeURIComponent(path));
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'attachment', encodeURIComponent(path));
 		const mimeType = getMimeType(path);
 
 		try {
@@ -373,7 +374,7 @@ export class VSyncClient {
 
 	/** 바이너리 파일 다운로드 - GET /v1/vault/{id}/attachment/{path} */
 	async downloadAttachment(path: string): Promise<ArrayBuffer> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'attachment', encodeURIComponent(path));
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'attachment', encodeURIComponent(path));
 
 		try {
 			const response = await requestUrl({
@@ -394,7 +395,7 @@ export class VSyncClient {
 
 	/** 파일 목록 조회 - GET /v1/vault/{id}/files (REQ-PA-018: 페이지네이션 지원) */
 	async listFiles(options?: PaginationOptions): Promise<FileInfo[]> {
-		let url = buildApiUrl(this._base_url, this._vault_id, 'files');
+		let url = buildApiUrl(this._baseUrl, this._vaultId, 'files');
 		const params: string[] = [];
 		if (options?.limit) params.push(`limit=${options.limit}`);
 		if (options?.cursor) params.push(`cursor=${options.cursor}`);
@@ -413,7 +414,7 @@ export class VSyncClient {
 
 	/** 이벤트 폴링 - GET /v1/vault/{id}/events?since={id} (REQ-PA-018: 페이지네이션 지원) */
 	async getEvents(sinceId?: string, options?: PaginationOptions): Promise<SyncEvent[]> {
-		let url = buildApiUrl(this._base_url, this._vault_id, 'events');
+		let url = buildApiUrl(this._baseUrl, this._vaultId, 'events');
 		const params: string[] = [];
 		if (sinceId) params.push(`since=${sinceId}`);
 		if (options?.limit) params.push(`limit=${options.limit}`);
@@ -431,17 +432,15 @@ export class VSyncClient {
 
 	/** 동기화 상태 업데이트 - PUT /v1/vault/{id}/sync-status */
 	async updateSyncStatus(lastEventId: string): Promise<void> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'sync-status');
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'sync-status');
 
 		await requestUrl({
 			url,
 			method: 'PUT',
-			headers: {
-				...this._getAuthHeaders(),
-				'Content-Type': 'application/json',
-			},
+			headers: this._getAuthHeaders(),
+			contentType: 'application/json',
 			body: JSON.stringify({
-				device_id: this._device_id,
+				device_id: this._deviceId,
 				last_event_id: lastEventId,
 			}),
 		});
@@ -475,11 +474,12 @@ export class VSyncClient {
 
 	/** 배치 연산 - POST /v1/vault/{id}/batch (REQ-PA-001) */
 	async batchOperations(operations: BatchOperation[]): Promise<BatchResult> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'batch');
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'batch');
 		const response = await requestUrl({
 			url,
 			method: 'POST',
-			headers: { ...this._getAuthAndDeviceHeaders(), 'Content-Type': 'application/json' },
+			headers: this._getAuthAndDeviceHeaders(),
+			contentType: 'application/json',
 			body: JSON.stringify({ operations }),
 		});
 		// 서버 응답: { results: [{ status, data?: {...}, error? }] } → 평탄화
@@ -496,11 +496,12 @@ export class VSyncClient {
 
 	/** 파일 이동 - POST /v1/vault/{id}/move (REQ-PA-004) */
 	async moveFile(from: string, to: string): Promise<MoveResult> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'move');
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'move');
 		const response = await requestUrl({
 			url,
 			method: 'POST',
-			headers: { ...this._getAuthAndDeviceHeaders(), 'Content-Type': 'application/json' },
+			headers: this._getAuthAndDeviceHeaders(),
+			contentType: 'application/json',
 			body: JSON.stringify({ from, to }),
 		});
 		return response.json as MoveResult;
@@ -508,7 +509,7 @@ export class VSyncClient {
 
 	/** 디바이스 목록 - GET /v1/vault/{id}/devices (REQ-PA-011) */
 	async getDevices(): Promise<DeviceInfo[]> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'devices');
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'devices');
 		const response = await requestUrl({
 			url,
 			method: 'GET',
@@ -520,7 +521,7 @@ export class VSyncClient {
 
 	/** 디바이스 제거 - DELETE /v1/vault/{id}/devices/{deviceId} (REQ-PA-012) */
 	async removeDevice(deviceId: string): Promise<void> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'devices', deviceId);
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'devices', deviceId);
 		await requestUrl({
 			url,
 			method: 'DELETE',
@@ -533,7 +534,7 @@ export class VSyncClient {
 		const params: string[] = [`q=${encodeURIComponent(query)}`];
 		if (options?.limit) params.push(`limit=${options.limit}`);
 		if (options?.folder) params.push(`folder=${encodeURIComponent(options.folder)}`);
-		const url = buildApiUrl(this._base_url, this._vault_id, 'search') + '?' + params.join('&');
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'search') + '?' + params.join('&');
 		const response = await requestUrl({
 			url,
 			method: 'GET',
@@ -544,7 +545,7 @@ export class VSyncClient {
 
 	/** 활성 충돌 목록 - GET /v1/vault/{id}/conflicts (REQ-PA-007) */
 	async getConflicts(): Promise<ConflictInfo[]> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'conflicts');
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'conflicts');
 		const response = await requestUrl({
 			url,
 			method: 'GET',
@@ -556,22 +557,24 @@ export class VSyncClient {
 
 	/** 충돌 해결 - POST /v1/vault/{id}/conflicts/{id}/resolve (REQ-PA-008) */
 	async resolveConflict(conflictId: string, resolution: 'accept' | 'reject'): Promise<void> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'conflicts', conflictId, 'resolve');
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'conflicts', conflictId, 'resolve');
 		await requestUrl({
 			url,
 			method: 'POST',
-			headers: { ...this._getAuthAndDeviceHeaders(), 'Content-Type': 'application/json' },
+			headers: this._getAuthAndDeviceHeaders(),
+			contentType: 'application/json',
 			body: JSON.stringify({ resolution }),
 		});
 	}
 
 	/** 병합 해결 - POST /v1/vault/{id}/conflicts/{id}/merge-resolve (REQ-PA-009) */
 	async mergeResolve(conflictId: string, content: string, hash: string): Promise<void> {
-		const url = buildApiUrl(this._base_url, this._vault_id, 'conflicts', conflictId, 'merge-resolve');
+		const url = buildApiUrl(this._baseUrl, this._vaultId, 'conflicts', conflictId, 'merge-resolve');
 		await requestUrl({
 			url,
 			method: 'POST',
-			headers: { ...this._getAuthAndDeviceHeaders(), 'Content-Type': 'application/json' },
+			headers: this._getAuthAndDeviceHeaders(),
+			contentType: 'application/json',
 			body: JSON.stringify({ content, hash }),
 		});
 	}
@@ -587,14 +590,14 @@ export class VSyncClient {
 	 */
 	enqueue(item: OfflineQueueItem): void {
 		// @MX:NOTE 동일 filePath 기존 항목 제거 (dedup) (REQ-P6-004)
-		this._offline_queue = this._offline_queue.filter(
+		this._offlineQueue = this._offlineQueue.filter(
 			(existing) => existing.filePath !== item.filePath
 		);
 
-		this._offline_queue.push(item);
+		this._offlineQueue.push(item);
 		// FIFO 초과 시 가장 오래된 항목 제거
-		if (this._offline_queue.length > MAX_QUEUE_SIZE) {
-			this._offline_queue.shift();
+		if (this._offlineQueue.length > MAX_QUEUE_SIZE) {
+			this._offlineQueue.shift();
 		}
 
 		this._persist();
@@ -602,7 +605,7 @@ export class VSyncClient {
 
 	/** 큐 크기 반환 */
 	getQueueSize(): number {
-		return this._offline_queue.length;
+		return this._offlineQueue.length;
 	}
 
 	/**
@@ -611,7 +614,7 @@ export class VSyncClient {
 	 * @MX:REASON main.ts에서만 호출, 복원 로직의 유일한 경로
 	 */
 	restoreQueue(items: OfflineQueueItem[]): void {
-		this._offline_queue = [...items];
+		this._offlineQueue = [...items];
 		this._persist();
 	}
 
@@ -622,14 +625,14 @@ export class VSyncClient {
 	 */
 	async flushQueue(): Promise<void> {
 		// @MX:NOTE mutex: 이미 flush 중이면 즉시 반환 (REQ-P6-007)
-		if (this._is_flushing || this._offline_queue.length === 0) return;
-		this._is_flushing = true;
+		if (this._isFlushing || this._offlineQueue.length === 0) return;
+		this._isFlushing = true;
 
 		const failedItems: OfflineQueueItem[] = [];
 
 		try {
-			while (this._offline_queue.length > 0) {
-				const item = this._offline_queue[0]; // peek
+			while (this._offlineQueue.length > 0) {
+				const item = this._offlineQueue[0]; // peek
 
 				try {
 					if (item.operation === 'upload') {
@@ -641,10 +644,10 @@ export class VSyncClient {
 					} else if (item.operation === 'delete') {
 						await this.deleteFile(item.filePath);
 					}
-					this._offline_queue.shift();
+					this._offlineQueue.shift();
 				} catch (error) {
 					if (!this._isNetworkError(error)) {
-						this._offline_queue.shift();
+						this._offlineQueue.shift();
 						failedItems.push(item);
 						continue;
 					}
@@ -652,23 +655,23 @@ export class VSyncClient {
 					item.retryCount++;
 
 					if (item.retryCount >= MAX_RETRIES) {
-						this._offline_queue.shift();
+						this._offlineQueue.shift();
 						failedItems.push(item);
 						continue;
 					}
 
-					this._offline_queue.shift();
-					this._offline_queue.push(item);
+					this._offlineQueue.shift();
+					this._offlineQueue.push(item);
 					break;
 				}
 			}
 
 			if (failedItems.length > 0) {
-				this._on_flush_failed?.(failedItems);
+				this._onFlushFailed?.(failedItems);
 			}
 		} finally {
 			this._persist();
-			this._is_flushing = false;
+			this._isFlushing = false;
 		}
 	}
 
@@ -679,7 +682,7 @@ export class VSyncClient {
 	/** 큐 영속화 호출 */
 	private _persist(): void {
 		try {
-			this._persist_callback(this._offline_queue);
+			this._persistCallback(this._offlineQueue);
 		} catch {
 			console.warn('vSync: Failed to persist offline queue');
 		}
@@ -707,22 +710,22 @@ export class VSyncClient {
 
 	/** 에러 처리 - 401 감지 시 콜백 호출 */
 	private _handleError(error: unknown): void {
-		if (this._isAuthError(error) && this._on_auth_failure) {
-			this._on_auth_failure();
+		if (this._isAuthError(error) && this._onAuthFailure) {
+			this._onAuthFailure();
 		}
 	}
 
 	// @MX:NOTE JWT Bearer 토큰만 사용 (ID/PW 로그인 전용)
 	/** 인증 헤더 반환 (JWT Bearer) */
 	private _getAuthHeaders(): Record<string, string> {
-		return { 'Authorization': `Bearer ${this._session_token}` };
+		return { 'Authorization': `Bearer ${this._sessionToken}` };
 	}
 
 	/** 인증 + 디바이스 ID 헤더 반환 */
 	private _getAuthAndDeviceHeaders(): Record<string, string> {
 		return {
 			...this._getAuthHeaders(),
-			'X-Device-ID': this._device_id,
+			'X-Device-ID': this._deviceId,
 		};
 	}
 

@@ -3,12 +3,9 @@
 import { computeHash } from './utils/hash';
 import { isConflictFile as checkIsConflictFile } from './utils/path';
 import type { App } from 'obsidian';
-
-// @MX:NOTE 409 응답에서 받은 diff 연산 타입
-export type DiffOperation = {
-	op: number; // -1: 삭제, 0: 동일, 1: 추가
-	text: string;
-};
+// @MX:NOTE types.ts에서 타입 import 후 재-export (REQ-003 타입 통합)
+import type { ConflictQueueItem, DiffOperation } from './types';
+export type { ConflictQueueItem, DiffOperation };
 
 // @MX:NOTE 사용자 선택 결과 타입
 export type ModalChoice = 'local' | 'remote' | 'both' | 'later';
@@ -29,30 +26,6 @@ type ModalInstance = {
 	open(): void;
 	close(): void;
 	clickButton(choice: ModalChoice): void;
-};
-
-// @MX:NOTE 충돌 큐 항목 타입 (REQ-UX-003, SPEC-P6-UX-002)
-export type ConflictQueueItem = {
-	/** 고유 식별자 */
-	id: string;
-	/** 원본 파일 경로 */
-	file_path: string;
-	/** 로컬 파일 내용 */
-	local_content: string;
-	/** 서버(원격) 파일 내용 */
-	server_content: string;
-	/** 3-way diff 데이터 (서버에서 제공, 없으면 null) */
-	diff: DiffOperation[] | null;
-	/** base 버전 해시 (3-way merge용) */
-	base_hash: string | null;
-	/** 서버 측 충돌 ID (409 응답에서 온 경우) */
-	conflict_id: string | null;
-	/** 충돌 유형: diff(3-way diff 가능) 또는 simple(단순 선택) */
-	type: 'diff' | 'simple';
-	/** 발생 시간 */
-	timestamp: number;
-	/** 충돌 발생 소스 */
-	source: 'download' | 'upload';
 };
 
 // @MX:NOTE 인메모리 충돌 큐 - 발생한 충돌을 순차적으로 관리 (REQ-UX-003)
@@ -191,10 +164,17 @@ export class ConflictResolver {
 	 * diff 데이터가 있으면 모달을 띄워 사용자 선택을 받음
 	 * diff 데이터가 없으면 기존 동작 유지 (하위 호환)
 	 */
+	// @MX:WARN [SPEC-PLUGIN-BUGFIX-001] null App 안전 처리 — _openModalFn 없으면 프로그래매틱 해결
 	async handleMergeConflict(info: MergeConflictInfo): Promise<string | ModalChoice> {
 		// diff 데이터가 없으면 기존 동작
 		if (!info.diff || !info.conflict_id) {
 			return this.handleConflict(info.file_path);
+		}
+
+		// 모달 함수가 없으면 프로그래매틱 해결 (서버 우선)
+		if (!this._openModalFn) {
+			this._noticeFn(`Conflict auto-resolved (server): ${info.file_path}`);
+			return 'remote';
 		}
 
 		// 동적 import로 순환 의존 방지
