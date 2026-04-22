@@ -38,6 +38,14 @@ vi.mock('obsidian', () => ({
 	requestUrl: vi.fn(),
 	Notice: vi.fn().mockImplementation((msg: string) => mockNotice(msg)),
 	Platform: { isDesktop: true, isMobile: false },
+	// REQ-PLG-001: Obsidian 내장 normalizePath mock
+	normalizePath: vi.fn((path: string): string => {
+		if (!path) return '';
+		return path
+			.replace(/\\/g, '/')
+			.replace(/\/+/g, '/')
+			.replace(/^\//, '');
+	}),
 }));
 
 // WS 클라이언트 mock

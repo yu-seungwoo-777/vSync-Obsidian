@@ -43,7 +43,7 @@ export interface RequestUrlResponse {
 // ============================================================
 
 // requestUrl - 각 테스트에서 vi.mocked로 오버라이드 가능
-export const requestUrl = vi.fn<[], Promise<RequestUrlResponse>>().mockImplementation(async () => ({
+export const requestUrl = vi.fn<Promise<RequestUrlResponse>>().mockImplementation(async () => ({
 	status: 200,
 	headers: {},
 	text: '',
@@ -52,6 +52,16 @@ export const requestUrl = vi.fn<[], Promise<RequestUrlResponse>>().mockImplement
 }));
 
 export const Notice = vi.fn().mockImplementation((text: string) => ({ _text: text }));
+
+// REQ-PLG-001: Obsidian 내장 normalizePath mock
+// 역슬래시 → 슬래시, 중복 슬래시 제거, 선행 슬래시 제거
+export const normalizePath = vi.fn((path: string): string => {
+	if (!path) return '';
+	return path
+		.replace(/\\/g, '/')
+		.replace(/\/+/g, '/')
+		.replace(/^\//, '');
+});
 
 export const Platform = {
 	isDesktop: true,
@@ -64,7 +74,7 @@ export const moment = vi.fn().mockReturnValue({
 
 // Plugin 기본 클래스 mock
 export class Plugin {
-	loadData = vi.fn<[], Promise<unknown>>().mockResolvedValue(null);
+	loadData = vi.fn<Promise<unknown>>().mockResolvedValue(null);
 	saveData = vi.fn().mockResolvedValue(undefined);
 	addStatusBarItem = vi.fn().mockReturnValue({
 		setText: vi.fn().mockReturnThis(),

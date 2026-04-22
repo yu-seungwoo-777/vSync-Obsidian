@@ -1,5 +1,8 @@
 // 경로 유틸리티
 
+// REQ-PLG-001: Obsidian 내장 normalizePath를 사용
+import { normalizePath as _obsidianNormalizePath } from 'obsidian';
+
 /** 동기화 허용 확장자 집합 (소문자) */
 export const ALLOWED_EXTENSIONS = new Set([
 	'.md', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp',
@@ -46,14 +49,8 @@ export function shouldSyncPath(path: string): boolean {
 	return ALLOWED_EXTENSIONS.has(ext);
 }
 
-/** 경로 정규화 (역슬래시 → 슬래시, 중복 슬래시 제거, 선행 슬래시 제거) */
-export function normalizePath(path: string): string {
-	if (!path) return '';
-	return path
-		.replace(/\\/g, '/')
-		.replace(/\/+/g, '/')
-		.replace(/^\//, '');
-}
+/** 경로 정규화: Obsidian 내장 normalizePath를 위임 (REQ-PLG-001) */
+export const normalizePath = _obsidianNormalizePath;
 
 /**
  * Vault 경로 보안 검증 (REQ-R5-006)
@@ -79,8 +76,8 @@ export function validateVaultPath(path: string): string {
 		throw new Error(`Invalid path: path traversal detected (".." in "${path}")`);
 	}
 
-	// 정규화
-	const normalized = normalizePath(path);
+	// 정규화 (Obsidian 내장 함수 사용)
+	const normalized = _obsidianNormalizePath(path);
 
 	// AC-006.5: 정규화 후 빈 문자열 거부
 	if (!normalized) {
