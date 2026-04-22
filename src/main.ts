@@ -6,7 +6,8 @@ import { VSyncSettingTab } from './settings';
 import { DEFAULT_SETTINGS } from './types';
 import type { VSyncSettings, OfflineQueueItem } from './types';
 import type { ConnectionMode } from './types';
-import type { VaultAdapter } from './sync-engine';
+import type { VaultAdapter } from './adapters/vault-adapter';
+import type { WorkspaceAdapter } from './adapters/workspace-adapter';
 import { ConflictQueue, ConflictResolver } from './conflict';
 import type { ConflictQueueItem } from './conflict';
 import { ConflictQueueView } from './ui/conflict-queue-view';
@@ -15,15 +16,6 @@ import { SearchInputModal, SearchModal } from './ui/search-modal';
 import { FileNotFoundError, VaultReadError, VaultWriteError } from './errors';
 import { validateVaultPath } from './utils/path';
 import { syncLogger } from './sync-logger';
-
-// @MX:NOTE SPEC-WORKSPACE-ADAPTER-001: Workspace/UI API 추상화 인터페이스
-// VaultAdapter가 파일 I/O를 추상화하는 것처럼, WorkspaceAdapter는 UI/Workspace API를 추상화
-export interface WorkspaceAdapter {
-	onLayoutReady(callback: () => void): void;
-	openFile(filePath: string): Promise<void>;
-	getLeavesOfType(viewType: string): Array<{ detach: () => void }>;
-	openViewInRightLeaf(viewType: string): Promise<void>;
-}
 
 export default class VSyncPlugin extends Plugin {
 	settings: VSyncSettings = { ...DEFAULT_SETTINGS };

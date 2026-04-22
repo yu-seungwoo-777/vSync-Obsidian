@@ -4,6 +4,7 @@ import { VSyncClient, MAX_BINARY_SIZE } from './api-client';
 import type { PersistCallback } from './api-client';
 import { ConflictResolver, ConflictQueue } from './conflict';
 import type { ConflictQueueItem } from './conflict';
+import type { VaultAdapter } from './adapters/vault-adapter';
 import { computeHash } from './utils/hash';
 import { shouldSyncPath, normalizePath, isObsidianPath, isBinaryPath } from './utils/path';
 import { WSClient } from './services/ws-client';
@@ -990,25 +991,4 @@ export class SyncEngine {
 			this._is_syncing = false;
 		}
 	}
-}
-
-/** Vault 어댑터 인터페이스 */
-export interface VaultAdapter {
-	read(path: string): Promise<string>;
-	readIfExists(path: string): Promise<string | null>;
-	write(path: string, content: string): Promise<void>;
-	delete(path: string): Promise<void>;
-	getFiles(): Array<{ path: string }>;
-	on(event: string, handler: (...args: unknown[]) => void): void;
-	off(event: string, handler: (...args: unknown[]) => void): void;
-	// 바이너리 지원 (REQ-P6-004 ~ REQ-P6-006)
-	readBinary(path: string): Promise<ArrayBuffer>;
-	readBinaryIfExists(path: string): Promise<ArrayBuffer | null>;
-	writeBinary(path: string, data: ArrayBuffer): Promise<void>;
-	// REQ-API-002: fileManager.renameFile - wiki link 보존
-	renameFile(oldPath: string, newPath: string): Promise<void>;
-	// REQ-API-003: vault.process - 원자적 read-modify-write
-	process(path: string, fn: (content: string) => string | null): Promise<string | null>;
-	// REQ-API-005: vault.cachedRead - 캐시 우선 읽기
-	cachedRead(path: string): Promise<string | null>;
 }

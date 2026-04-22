@@ -1,7 +1,7 @@
 // 충돌 흐름 통합 테스트 (SPEC-P6-UX-002)
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SyncEngine } from '../../src/sync-engine';
-import type { VaultAdapter } from '../../src/sync-engine';
+import type { VaultAdapter } from '../../src/adapters/vault-adapter';
 import { ConflictQueue } from '../../src/conflict';
 import type { ConflictQueueItem } from '../../src/conflict';
 import type { OfflineQueueItem } from '../../src/types';
@@ -37,6 +37,17 @@ function createVault(textMap: Map<string, string> = new Map()): VaultAdapter {
 		readBinary: vi.fn().mockRejectedValue(new Error('Not implemented')),
 		readBinaryIfExists: vi.fn().mockResolvedValue(null),
 		writeBinary: vi.fn().mockRejectedValue(new Error('Not implemented')),
+		renameFile: vi.fn().mockImplementation(async (oldPath: string, newPath: string) => {
+			const content = textMap.get(oldPath);
+			if (content !== undefined) { textMap.delete(oldPath); textMap.set(newPath, content); }
+		}),
+		process: vi.fn().mockImplementation(async (path: string, fn: (data: string) => string | null) => {
+			const content = textMap.get(path) ?? '';
+			const result = fn(content);
+			if (result !== null) textMap.set(path, result);
+			return result;
+		}),
+		cachedRead: vi.fn().mockImplementation(async (path: string) => textMap.get(path) ?? null),
 	};
 }
 
