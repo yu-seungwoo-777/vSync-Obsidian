@@ -1,0 +1,89 @@
+/* vSync Plugin Styles */
+
+/* Conflict queue panel */
+.vsync-conflict-queue {
+    padding: 8px;
+}
+
+.vsync-conflict-item {
+    padding: 8px;
+    margin: 4px 0;
+    border-radius: 4px;
+    border-left: 3px solid var(--text-warning);
+    background: var(--background-secondary);
+}
+
+.vsync-conflict-item:hover {
+    background: var(--background-secondary-alt);
+}
+
+/* Sync log panel */
+.vsync-sync-log {
+    padding: 8px;
+    font-family: var(--font-monospace);
+    font-size: var(--font-ui-small);
+}
+
+.vsync-log-entry {
+    padding: 2px 4px;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vsync-log-entry.info {
+    color: var(--text-normal);
+}
+
+.vsync-log-entry.success {
+    color: var(--text-success);
+}
+
+.vsync-log-entry.warning {
+    color: var(--text-warning);
+}
+
+.vsync-log-entry.error {
+    color: var(--text-error);
+}
+
+/* Status bar */
+.vsync-status-bar {
+    cursor: pointer;
+}
+
+/* Conflict resolve modal */
+.vsync-diff-container {
+    display: flex;
+    gap: 8px;
+    max-height: 60vh;
+    overflow-y: auto;
+}
+
+.vsync-diff-pane {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 4px;
+    font-family: var(--font-monospace);
+    font-size: var(--font-smaller);
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.vsync-diff-pane.local {
+    border-color: var(--text-accent);
+}
+
+.vsync-diff-pane.server {
+    border-color: var(--text-warning);
+}
+
+/* Search modal */
+.vsync-search-result {
+    padding: 8px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vsync-search-result:hover {
+    background: var(--background-secondary-alt);
+}
