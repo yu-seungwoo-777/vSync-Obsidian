@@ -1,0 +1,5 @@
+settings.local.json
+local/
+plans/
+agent-memory/
+worktrees/
