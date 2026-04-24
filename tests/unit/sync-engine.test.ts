@@ -393,9 +393,6 @@ describe('SyncEngine', () => {
 				{ id: 1, path: 'server-only.md', hash: 'srv-h', size_bytes: 10, created_at: '', updated_at: '' },
 			]);
 			mockApiClient.rawDownload.mockResolvedValue('server content');
-			mockApiClient.listFiles.mockResolvedValueOnce([
-				{ id: 1, path: 'server-only.md', hash: 'srv-h', size_bytes: 14, created_at: '', updated_at: '' },
-			]);
 			mockApiClient.getEvents.mockResolvedValueOnce([]);
 			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
 

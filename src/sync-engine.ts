@@ -1156,9 +1156,9 @@ export class SyncEngine {
 				if (!shouldSyncPath(sf.path)) continue;
 
 				if (isBinaryPath(sf.path)) {
-					await this._downloadRemoteBinary(sf.path);
+					await this._downloadRemoteBinary(sf.path, sf.hash);
 				} else {
-					await this._downloadRemoteText(sf.path);
+					await this._downloadRemoteText(sf.path, sf.hash);
 				}
 			}
 
