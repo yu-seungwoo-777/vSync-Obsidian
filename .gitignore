@@ -23,3 +23,9 @@ coverage/
 # MoAI / Claude Code (should not ship to plugin repo)
 .claude/
 .moai/
+
+# Agent reference docs (local only)
+DEPLOY.md
+
+# Deploy scripts (internal, not for distribution)
+scripts/
