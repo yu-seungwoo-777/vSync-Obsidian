@@ -106,7 +106,7 @@ describe('SyncEngine', () => {
 
 			await engine.handleLocalCreate(file);
 
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'content');
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'content', undefined);
 		});
 
 		it('파일 수정 시 업로드해야 한다', async () => {
@@ -119,7 +119,7 @@ describe('SyncEngine', () => {
 			await engine.handleLocalModify(file);
 			await vi.advanceTimersByTimeAsync(500);
 
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'modified content');
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'modified content', undefined);
 			vi.useRealTimers();
 		});
 
@@ -330,12 +330,17 @@ describe('SyncEngine', () => {
 		it('전체 동기화 순서: 업로드 → 이벤트 폴링 → 커서 업데이트', async () => {
 			vault._textMap.set('test.md', 'content');
 			vault.getFiles.mockReturnValueOnce([createMockFile('test.md', 'content')]);
+			mockApiClient.listFiles.mockResolvedValueOnce([]);
 			mockApiClient.rawUpload.mockResolvedValue({ id: 1, path: 'test.md', hash: 'h', sizeBytes: 0, version: 1 });
-			mockApiClient.getEvents.mockResolvedValueOnce([
-				{ id: '5', event_type: 'created', file_path: 'remote.md', device_id: 'device-2', created_at: '2026-01-01' },
-			]);
+			// _processDeletedEventsFirst + 이벤트 폴링에서 각각 getEvents 호출
+			mockApiClient.getEvents
+				.mockResolvedValueOnce([]) // _processDeletedEventsFirst
+				.mockResolvedValueOnce([ // 이벤트 폴링
+					{ id: '5', event_type: 'created', file_path: 'remote.md', device_id: 'device-2', created_at: '2026-01-01' },
+				]);
 			mockApiClient.rawDownload.mockResolvedValue('remote content');
-			mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
+			mockApiClient.listFiles.mockResolvedValue([]);
+			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
 
 			await engine.performFullSync();
 
@@ -347,6 +352,75 @@ describe('SyncEngine', () => {
 	});
 
 	// ============================================================
+	// SPEC-SYNC-3WAY-FIX-001 T-004: performFullSync 서버 비교
+	// ============================================================
+
+	describe('performFullSync 서버 비교 (SPEC-SYNC-3WAY-FIX-001 T-004)', () => {
+		it('서버 해시 == 로컬 해시 → 업로드 스킵', async () => {
+			vault._textMap.set('same.md', 'content');
+			vault.getFiles.mockReturnValueOnce([createMockFile('same.md', 'content')]);
+			vi.mocked(computeHash).mockResolvedValueOnce('same-hash');
+			mockApiClient.listFiles.mockResolvedValueOnce([
+				{ id: 1, path: 'same.md', hash: 'same-hash', size_bytes: 7, created_at: '', updated_at: '' },
+			]);
+			mockApiClient.getEvents.mockResolvedValueOnce([]);
+			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
+			await engine.performFullSync();
+
+			expect(mockApiClient.rawUpload).not.toHaveBeenCalled();
+		});
+
+		it('서버 해시 != 로컬 해시 → baseHash와 함께 업로드', async () => {
+			vault._textMap.set('diff.md', 'new content');
+			vault.getFiles.mockReturnValueOnce([createMockFile('diff.md', 'new content')]);
+			vi.mocked(computeHash).mockResolvedValueOnce('local-hash');
+			mockApiClient.listFiles.mockResolvedValueOnce([
+				{ id: 1, path: 'diff.md', hash: 'server-hash', size_bytes: 10, created_at: '', updated_at: '' },
+			]);
+			mockApiClient.rawUpload.mockResolvedValue({ id: 1, path: 'diff.md', hash: 'merged-hash', sizeBytes: 10, version: 1 });
+			mockApiClient.getEvents.mockResolvedValueOnce([]);
+			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
+			await engine.performFullSync();
+
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('diff.md', 'new content', 'server-hash');
+		});
+
+		it('서버에만 있는 파일 → 다운로드', async () => {
+			vault.getFiles.mockReturnValueOnce([]);
+			mockApiClient.listFiles.mockResolvedValueOnce([
+				{ id: 1, path: 'server-only.md', hash: 'srv-h', size_bytes: 10, created_at: '', updated_at: '' },
+			]);
+			mockApiClient.rawDownload.mockResolvedValue('server content');
+			mockApiClient.listFiles.mockResolvedValueOnce([
+				{ id: 1, path: 'server-only.md', hash: 'srv-h', size_bytes: 14, created_at: '', updated_at: '' },
+			]);
+			mockApiClient.getEvents.mockResolvedValueOnce([]);
+			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
+			await engine.performFullSync();
+
+			expect(mockApiClient.rawDownload).toHaveBeenCalledWith('server-only.md');
+		});
+
+		it('로컬에만 있는 파일 → baseHash 없이 업로드', async () => {
+			vault._textMap.set('local-only.md', 'local content');
+			vault.getFiles.mockReturnValueOnce([createMockFile('local-only.md', 'local content')]);
+			mockApiClient.listFiles.mockResolvedValueOnce([]);
+			vi.mocked(computeHash).mockResolvedValueOnce('local-hash');
+			mockApiClient.rawUpload.mockResolvedValue({ id: 1, path: 'local-only.md', hash: 'uploaded-hash', sizeBytes: 13, version: 1 });
+			mockApiClient.getEvents.mockResolvedValueOnce([]);
+			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
+			await engine.performFullSync();
+
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('local-only.md', 'local content', undefined);
+		});
+	});
+
+	// ============================================================
+	// REQ-P6-011 ~ REQ-P6-016: 바이너리 파일 동기화	// ============================================================
 	// REQ-P6-011 ~ REQ-P6-016: 바이너리 파일 동기화
 	// ============================================================
 
@@ -431,7 +505,8 @@ describe('SyncEngine', () => {
 			// 로컬 해시와 원격 해시가 다르면 충돌 감지
 			vi.mocked(computeHash)
 				.mockResolvedValueOnce('local-hash')
-				.mockResolvedValueOnce('remote-hash');
+				.mockResolvedValueOnce('remote-hash')
+				.mockResolvedValueOnce('cache-hash');
 
 			await engine.pollRemoteChanges();
 
@@ -501,7 +576,7 @@ describe('SyncEngine', () => {
 
 			await engine.handleLocalCreate(file);
 
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', '# Test');
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', '# Test', undefined);
 			expect(mockApiClient.uploadAttachment).not.toHaveBeenCalled();
 		});
 
@@ -644,11 +719,16 @@ describe('SyncEngine', () => {
 		it('performFullSync의 이벤트 처리가 _enqueueEvent를 사용해야 한다', async () => {
 			vault._textMap.set('local.md', 'local-content');
 			vault.getFiles.mockReturnValueOnce([createMockFile('local.md', 'local-content')]);
+			mockApiClient.listFiles.mockResolvedValueOnce([]);
 			mockApiClient.rawUpload.mockResolvedValue({ id: 1, path: 'local.md', hash: 'h', sizeBytes: 0, version: 1 });
-			mockApiClient.getEvents.mockResolvedValueOnce([
-				{ id: 'fs1', event_type: 'created', file_path: 'remote-fs.md', device_id: 'device-2', created_at: '2026-01-01' },
-			]);
+			// _processDeletedEventsFirst + 이벤트 폴링에서 각각 getEvents 호출
+			mockApiClient.getEvents
+				.mockResolvedValueOnce([]) // _processDeletedEventsFirst
+				.mockResolvedValueOnce([ // 이벤트 폴링
+					{ id: 'fs1', event_type: 'created', file_path: 'remote-fs.md', device_id: 'device-2', created_at: '2026-01-01' },
+				]);
 			mockApiClient.rawDownload.mockResolvedValue('remote-content');
+			mockApiClient.listFiles.mockResolvedValue([]);
 			mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
 
 			await engine.performFullSync();
@@ -680,7 +760,21 @@ describe('SyncEngine', () => {
 				vi.mocked(computeHash).mockResolvedValueOnce('new-hash');
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/test.md', hash: 'server-new', sizeBytes: 11, version: 1 });
 				await (engine as any)._uploadLocalFile('notes/test.md');
-				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'new content');
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'new content', 'old-hash');
+			});
+
+			// ============================================================
+			// SPEC-SYNC-3WAY-FIX-001 T-002: baseHash 전파
+			// ============================================================
+
+			it('업로드 시 캐시된 해시를 baseHash로 rawUpload에 전달해야 한다', async () => {
+				vault._textMap.set('notes/test.md', 'content');
+				const cache = (engine as any)._hashCache as Map<string, string>;
+				cache.set('notes/test.md', 'cached-hash-abc');
+				vi.mocked(computeHash).mockResolvedValueOnce('different-hash');
+				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/test.md', hash: 'server-hash', sizeBytes: 7, version: 1 });
+				await (engine as any)._uploadLocalFile('notes/test.md');
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'content', 'cached-hash-abc');
 			});
 
 			it('업로드 성공 시 서버 해시로 캐시를 업데이트해야 한다 (AC-003.1)', async () => {
@@ -732,16 +826,23 @@ describe('SyncEngine', () => {
 				expect(cache.has('notes/old.md')).toBe(false);
 			});
 
-			it('원격 다운로드 후 캐시 엔트리를 제거해야 한다 (AC-007.4)', async () => {
+			// ============================================================
+			// SPEC-SYNC-3WAY-FIX-001 T-003: 다운로드 후 캐시 업데이트
+			// ============================================================
+			it('원격 다운로드 후 캐시를 서버 해시로 업데이트해야 한다', async () => {
 				const cache = (engine as any)._hashCache as Map<string, string>;
 				cache.set('notes/remote.md', 'old-hash');
 				mockApiClient.getEvents.mockResolvedValueOnce([
-					{ id: '10', event_type: 'created', file_path: 'notes/remote.md', device_id: 'device-2', created_at: '2026-01-01' },
+					{ id: '10', event_type: 'updated', file_path: 'notes/remote.md', device_id: 'device-2', created_at: '2026-01-01' },
 				]);
 				mockApiClient.rawDownload.mockResolvedValueOnce('remote content');
+				// listFiles에서 서버 해시를 제공하여 캐시 업데이트에 사용
+				mockApiClient.listFiles.mockResolvedValueOnce([
+					{ id: 1, path: 'notes/remote.md', hash: 'server-hash-new', size_bytes: 14, created_at: '', updated_at: '' },
+				]);
 				mockApiClient.updateSyncStatus.mockResolvedValueOnce(undefined);
 				await engine.pollRemoteChanges();
-				expect(cache.has('notes/remote.md')).toBe(false);
+				expect(cache.get('notes/remote.md')).toBe('server-hash-new');
 			});
 
 			it('캐시 업데이트 시 onCacheUpdate 콜백을 호출해야 한다 (AC-006.3)', async () => {
@@ -776,7 +877,7 @@ describe('SyncEngine', () => {
 				vi.mocked(computeHash).mockResolvedValueOnce('hash');
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/new.md', hash: 'h', sizeBytes: 11, version: 1 });
 				await engine.handleLocalCreate(createMockFile('notes/new.md', 'new content'));
-				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/new.md', 'new content');
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/new.md', 'new content', undefined);
 			});
 
 			it('destroy 시 타이머 정리 (AC-008.6)', async () => {
@@ -1412,9 +1513,12 @@ describe('SyncEngine', () => {
 		});
 
 		describe('타겟팅된 해시 조회 (REQ-PA-019, T-021)', () => {
-			it('로컬 파일 없으면 listFiles 호출 없이 다운로드', async () => {
-				// 로컬 파일 존재하지 않음 → 충돌 감지 불필요 → listFiles 생략
+			it('로컬 파일 없으면 충돌 감지 없이 다운로드 후 listFiles로 캐시 업데이트', async () => {
+				// 로컬 파일 존재하지 않음 → 충돌 감지 생략, listFiles는 캐시 업데이트용 호출
 				mockApiClient.rawDownload.mockResolvedValueOnce('remote content');
+				mockApiClient.listFiles.mockResolvedValueOnce([
+					{ id: 1, path: 'remote.md', hash: 'server-h', size_bytes: 14, created_at: '', updated_at: '' },
+				]);
 				mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
 
 				const events = [
@@ -1425,7 +1529,94 @@ describe('SyncEngine', () => {
 				await engine.pollRemoteChanges();
 
 				expect(mockApiClient.rawDownload).toHaveBeenCalledWith('remote.md');
-				expect(mockApiClient.listFiles).not.toHaveBeenCalled();
+				// 캐시 업데이트를 위해 listFiles 호출
+				expect(mockApiClient.listFiles).toHaveBeenCalled();
+				const cache = (engine as any)._hashCache as Map<string, string>;
+				expect(cache.get('remote.md')).toBe('server-h');
+			});
+		});
+
+	
+		// ============================================================
+		// SPEC-SYNC-3WAY-FIX-001 T-006: 통합 시나리오 테스트
+		// ============================================================
+		describe('통합 시나리오 (SPEC-SYNC-3WAY-FIX-001 T-006)', () => {
+			it('시나리오 1: 다중 기기 편집 충돌 시 baseHash 전달', async () => {
+				// 기기 A에서 파일 생성 → 서버에 업로드됨 (hash: 'v1-hash')
+				// 기기 B에서 동일 파일 수정 → 서버에 업로드됨 (hash: 'v2-hash')
+				// 기기 A가 performFullSync → 서버 해시('v2-hash')를 baseHash로 전달
+				vault._textMap.set('shared.md', 'A edits');
+				vault.getFiles.mockReturnValueOnce([createMockFile('shared.md', 'A edits')]);
+				vi.mocked(computeHash).mockResolvedValueOnce('v1-hash');
+				mockApiClient.listFiles.mockResolvedValueOnce([
+					{ id: 1, path: 'shared.md', hash: 'v2-hash', size_bytes: 10, created_at: '', updated_at: '' },
+				]);
+				mockApiClient.rawUpload.mockResolvedValue({ id: 1, path: 'shared.md', hash: 'merged-hash', sizeBytes: 8, version: 2 });
+				mockApiClient.getEvents.mockResolvedValueOnce([]);
+				mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
+				await engine.performFullSync();
+
+				// baseHash로 서버 해시 전달 → 3-way merge 트리거
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('shared.md', 'A edits', 'v2-hash');
+				// 캐시에 merge 결과 해시 저장
+				const cache = (engine as any)._hashCache as Map<string, string>;
+				expect(cache.get('shared.md')).toBe('merged-hash');
+			});
+
+			it('시나리오 2: 전체 동기화 후 해시 캐시 일관성', async () => {
+				// 3개 파일: 동일(skip), 다름(upload), 서버에만 있음(download)
+				vault._textMap.set('same.md', 'same content');
+				vault._textMap.set('changed.md', 'new content');
+				vault.getFiles.mockReturnValueOnce([
+					createMockFile('same.md', 'same content'),
+					createMockFile('changed.md', 'new content'),
+				]);
+				vi.mocked(computeHash)
+					.mockResolvedValueOnce('same-hash')   // same.md 로컬 해시
+					.mockResolvedValueOnce('changed-hash'); // changed.md 로컬 해시
+				mockApiClient.listFiles.mockResolvedValueOnce([
+					{ id: 1, path: 'same.md', hash: 'same-hash', size_bytes: 12, created_at: '', updated_at: '' },
+					{ id: 2, path: 'changed.md', hash: 'old-hash', size_bytes: 10, created_at: '', updated_at: '' },
+					{ id: 3, path: 'remote-only.md', hash: 'remote-hash', size_bytes: 8, created_at: '', updated_at: '' },
+				]);
+				mockApiClient.rawUpload.mockResolvedValue({ id: 2, path: 'changed.md', hash: 'uploaded-hash', sizeBytes: 12, version: 2 });
+				mockApiClient.rawDownload.mockResolvedValue('remote content');
+				mockApiClient.getEvents.mockResolvedValueOnce([]);
+				mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
+				await engine.performFullSync();
+
+				const cache = (engine as any)._hashCache as Map<string, string>;
+				// same.md: 스킵, 서버 해시로 캐시 업데이트
+				expect(cache.get('same.md')).toBe('same-hash');
+				// changed.md: 업로드, 결과 해시로 캐시 업데이트
+				expect(cache.get('changed.md')).toBe('uploaded-hash');
+				// same.md는 rawUpload 호출되지 않음
+				expect(mockApiClient.rawUpload).not.toHaveBeenCalledWith('same.md', expect.anything(), expect.anything());
+				// changed.md는 baseHash와 함께 업로드
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('changed.md', 'new content', 'old-hash');
+				// remote-only.md 다운로드됨
+				expect(mockApiClient.rawDownload).toHaveBeenCalledWith('remote-only.md');
+			});
+
+			it('시나리오 3: 새 파일 생성 시 baseHash 없이 업로드 후 캐시 구축', async () => {
+				// 로컬에만 있는 새 파일 → 서버에 업로드
+				vault._textMap.set('new-note.md', 'new file content');
+				vault.getFiles.mockReturnValueOnce([createMockFile('new-note.md', 'new file content')]);
+				vi.mocked(computeHash).mockResolvedValueOnce('new-hash');
+				mockApiClient.listFiles.mockResolvedValueOnce([]);
+				mockApiClient.rawUpload.mockResolvedValue({ id: 1, path: 'new-note.md', hash: 'server-new-hash', sizeBytes: 16, version: 1 });
+				mockApiClient.getEvents.mockResolvedValueOnce([]);
+				mockApiClient.updateSyncStatus.mockResolvedValue(undefined);
+
+				await engine.performFullSync();
+
+				// baseHash 없이 업로드 (서버에 없으므로)
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('new-note.md', 'new file content', undefined);
+				// 캐시에 서버 응답 해시 저장
+				const cache = (engine as any)._hashCache as Map<string, string>;
+				expect(cache.get('new-note.md')).toBe('server-new-hash');
 			});
 		});
 

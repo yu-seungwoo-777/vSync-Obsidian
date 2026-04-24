@@ -135,6 +135,8 @@ export interface OfflineQueueItem {
 	retryCount: number;
 	/** content의 SHA-256 해시 (upload 시), 선택적 필드 (REQ-P6-003) */
 	hash?: string;
+	/** 3-way merge를 위한 서버 base 해시 (SPEC-SYNC-3WAY-FIX-001 T-005) */
+	baseHash?: string;
 }
 
 /** 동기화 엔진 상태 */

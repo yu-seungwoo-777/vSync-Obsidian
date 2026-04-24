@@ -112,6 +112,9 @@ describe('performFullSync — Event-first processing (SPEC-SYNC-DELETE-001 T4)',
 			createMockFile('notes/temp.md', 'temp content'),
 		]);
 
+		// 서버 파일 목록: 빈 배열 (temp.md는 삭제 예정)
+		mockApiClient.listFiles.mockResolvedValueOnce([]);
+
 		// _processDeletedEventsFirst용 getEvents: temp.md 삭제 이벤트 (다른 디바이스)
 		mockApiClient.getEvents
 			.mockResolvedValueOnce([
@@ -135,7 +138,7 @@ describe('performFullSync — Event-first processing (SPEC-SYNC-DELETE-001 T4)',
 		await engine.performFullSync();
 
 		// Then: 로컬 파일이 삭제됨 (이벤트 우선 처리)
-				expect(vault.delete).toHaveBeenCalledWith('notes/temp.md');
+		expect(vault.delete).toHaveBeenCalledWith('notes/temp.md');
 		// 재업로드되지 않음
 		expect(mockApiClient.rawUpload).not.toHaveBeenCalledWith(
 			'notes/temp.md', expect.anything()
@@ -161,6 +164,12 @@ describe('performFullSync — Event-first processing (SPEC-SYNC-DELETE-001 T4)',
 			createMockFile('notes/a.md', 'content-a'),
 			createMockFile('notes/b.md', 'content-b'),
 			createMockFile('notes/c.md', 'content-c'),
+		]);
+
+		// 서버 파일 목록: a.md, c.md만 서버에 존재
+		mockApiClient.listFiles.mockResolvedValueOnce([
+			{ id: 1, path: 'notes/a.md', hash: 'hash-a', size_bytes: 10, created_at: '', updated_at: '' },
+			{ id: 2, path: 'notes/c.md', hash: 'hash-c', size_bytes: 10, created_at: '', updated_at: '' },
 		]);
 
 		// _processDeletedEventsFirst: b.md 삭제 이벤트 (다른 디바이스)
@@ -191,12 +200,12 @@ describe('performFullSync — Event-first processing (SPEC-SYNC-DELETE-001 T4)',
 		expect(mockApiClient.rawUpload).not.toHaveBeenCalledWith(
 			'notes/b.md', expect.anything()
 		);
-		// a.md와 c.md는 정상 업로드됨
+		// a.md와 c.md는 baseHash와 함께 정상 업로드됨
 		expect(mockApiClient.rawUpload).toHaveBeenCalledWith(
-			'notes/a.md', 'content-a'
+			'notes/a.md', 'content-a', 'hash-a'
 		);
 		expect(mockApiClient.rawUpload).toHaveBeenCalledWith(
-			'notes/c.md', 'content-c'
+			'notes/c.md', 'content-c', 'hash-c'
 		);
 		// 총 2회 업로드 (a, c만)
 		expect(mockApiClient.rawUpload).toHaveBeenCalledTimes(2);
@@ -217,6 +226,9 @@ describe('performFullSync — Event-first processing (SPEC-SYNC-DELETE-001 T4)',
 		vault.getFiles.mockReturnValueOnce([
 			createMockFile('attachments/img.png'),
 		]);
+
+		// 서버 파일 목록: 빈 배열 (img.png는 삭제 예정)
+		mockApiClient.listFiles.mockResolvedValueOnce([]);
 
 		// _processDeletedEventsFirst: img.png 삭제 이벤트 (다른 디바이스)
 		mockApiClient.getEvents

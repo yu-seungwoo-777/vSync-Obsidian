@@ -94,7 +94,7 @@ describe('SyncEngine - 신뢰성 (SPEC-P6-RELIABLE-005)', () => {
 			await (engine as any)._uploadLocalFile('notes/test.md');
 
 			expect(vault.readIfExists).toHaveBeenCalledWith('notes/test.md');
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'content');
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'content', undefined);
 		});
 
 		// AC-002.2: null 반환 시 스킵 (에러 없이)
@@ -115,7 +115,7 @@ describe('SyncEngine - 신뢰성 (SPEC-P6-RELIABLE-005)', () => {
 
 			await (engine as any)._uploadLocalFile('notes/empty.md');
 
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/empty.md', '');
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/empty.md', '', undefined);
 		});
 
 		// AC-002.4: VaultReadError catch

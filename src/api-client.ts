@@ -645,7 +645,7 @@ export class VSyncClient {
 						if (item.content instanceof ArrayBuffer) {
 							await this.uploadAttachment(item.filePath, item.content);
 						} else {
-							await this.rawUpload(item.filePath, item.content);
+							await this.rawUpload(item.filePath, item.content, item.baseHash);
 						}
 					} else if (item.operation === 'delete') {
 						await this.deleteFile(item.filePath);

@@ -404,7 +404,8 @@ export class SyncEngine {
 				}
 
 				// 업로드 실행 (AC-002.3)
-				const result = await this._client.rawUpload(normalizedPath, content);
+				// @MX:NOTE 캐시된 해시를 baseHash로 전달하여 3-way merge 트리거
+				const result = await this._client.rawUpload(normalizedPath, content, cachedHash);
 
 				// @MX:NOTE 409 Conflict 응답 시 충돌 큐에 적재
 				if ('conflict' in result && result.conflict === true) {
@@ -629,16 +630,17 @@ export class SyncEngine {
 
 		// 로컬 파일 존재 여부 확인
 		const localContent = await this._vault.readIfExists(path);
+		let resolvedHash = serverHash;
+
 		if (localContent !== null) {
 			// @MX:NOTE 타겟팅된 해시 조회: serverHash 있으면 listFiles 생략
-			let resolvedHash = serverHash;
 			if (!resolvedHash) {
 				const serverFiles = await this._client.listFiles();
 				const matchedFile = serverFiles.find((f: FileInfo) => f.path === path);
 				resolvedHash = matchedFile?.hash;
 			}
 			if (resolvedHash) {
-				const hasConflict = await this._conflictResolver.detectConflict(localContent, resolvedHash!);
+				const hasConflict = await this._conflictResolver.detectConflict(localContent, resolvedHash);
 				if (hasConflict) {
 					// @MX:NOTE 충돌 큐가 있으면 enqueue, 없으면 기존 동작
 					if (this._conflictQueue) {
@@ -669,8 +671,22 @@ export class SyncEngine {
 		// 짧은 지연 후 recentlyModified에서 제거
 		setTimeout(() => this._recentlyModified.delete(path), RECENTLY_MODIFIED_TTL_MS);
 
-		// AC-007.4: 원격 다운로드 후 캐시 무효화
-		this._hashCache.delete(path);
+		// @MX:NOTE 원격 다운로드 후 서버 해시로 캐시 업데이트 (3-way merge 지원)
+		// resolvedHash가 없으면 listFiles에서 조회
+		if (!resolvedHash) {
+			try {
+				const serverFiles = await this._client.listFiles();
+				const matchedFile = serverFiles.find((f: FileInfo) => f.path === path);
+				resolvedHash = matchedFile?.hash;
+			} catch {
+				// listFiles 실패 시 해시 없이 진행
+			}
+		}
+		if (resolvedHash) {
+			this._updateHashCache(path, resolvedHash);
+		} else {
+			this._hashCache.delete(path);
+		}
 	}
 
 	/** 바이너리 파일 원격 다운로드 */
@@ -693,8 +709,9 @@ export class SyncEngine {
 		await this._vault.writeBinary(path, remoteData);
 		setTimeout(() => this._recentlyModified.delete(path), RECENTLY_MODIFIED_TTL_MS);
 
-		// AC-007.4: 원격 다운로드 후 캐시 무효화
-		this._hashCache.delete(path);
+		// @MX:NOTE 원격 다운로드 후 서버 해시로 캐시 업데이트 (3-way merge 지원)
+		const binaryHash = serverHash ?? await computeHash(remoteData);
+		this._updateHashCache(path, binaryHash);
 	}
 
 	/** 로컬 파일 삭제 */
@@ -1090,33 +1107,62 @@ export class SyncEngine {
 			// hash_cache.clear() 이후이므로 3-way 비교는 무의미, event-first만 수행
 			const deletedPaths = await this._processDeletedEventsFirst();
 
-			// 1. 로컬 파일 모두 업로드 (삭제된 경로는 제외)
+			// SPEC-SYNC-3WAY-FIX-001 T-004: 서버 파일 목록 조회 후 비교
+			const serverFiles = await this._client.listFiles();
+			const serverFileMap = new Map<string, string>();
+			for (const sf of serverFiles) {
+				serverFileMap.set(sf.path, sf.hash);
+			}
+
+			// 1. 로컬 파일 처리 (삭제된 경로는 제외)
 			const localFiles = this._vault.getFiles();
+			const localPathSet = new Set<string>();
 			for (const file of localFiles) {
 				// @MX:NOTE 삭제 이벤트로 이미 처리된 파일은 업로드 스킵
 				if (deletedPaths.has(file.path)) continue;
 
 				if (shouldSyncPath(file.path)) {
+					localPathSet.add(file.path);
 					if (isBinaryPath(file.path)) {
 						const data = await this._vault.readBinary(file.path);
 						await this._client.uploadAttachment(file.path, data);
 					} else {
-						// readIfExists 사용
+						// 텍스트 파일: 해시 비교 후 조건부 업로드
 						const content = await this._vault.readIfExists(file.path);
 						if (content !== null) {
-							const result = await this._client.rawUpload(file.path, content);
-							// AC-005.2: 업로드 후 결과로 캐시 업데이트
-							if ('conflict' in result && result.conflict === true) {
-								await this._handleUploadConflict(file.path, content, result);
+							const localHash = await computeHash(content);
+							const serverHash = serverFileMap.get(file.path);
+							if (serverHash === localHash) {
+								// 서버와 동일 → 업로드 스킵, 캐시만 업데이트
+								this._updateHashCache(file.path, serverHash);
 							} else {
-								this._updateHashCache(file.path, (result as import('./types').UploadResult).hash);
+								// 서버와 다르거나 서버에 없음 → baseHash와 함께 업로드
+								const result = await this._client.rawUpload(file.path, content, serverHash);
+								if ('conflict' in result && result.conflict === true) {
+									await this._handleUploadConflict(file.path, content, result);
+								} else {
+									this._updateHashCache(file.path, (result as import('./types').UploadResult).hash);
+								}
 							}
 						}
 					}
 				}
 			}
 
-			// 2. 원격 변경 폴링/다운로드 → 큐 라우팅
+			// 2. 서버에만 있는 파일 → 다운로드
+			for (const sf of serverFiles) {
+				if (localPathSet.has(sf.path)) continue;
+				if (deletedPaths.has(sf.path)) continue;
+				if (!shouldSyncPath(sf.path)) continue;
+
+				if (isBinaryPath(sf.path)) {
+					await this._downloadRemoteBinary(sf.path);
+				} else {
+					await this._downloadRemoteText(sf.path);
+				}
+			}
+
+			// 3. 원격 변경 폴링/다운로드 → 큐 라우팅
 			const events = await this._client.getEvents(this._lastEventId || undefined);
 			for (const event of events) {
 				await this._enqueueEvent(event);

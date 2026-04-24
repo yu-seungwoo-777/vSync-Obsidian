@@ -861,6 +861,64 @@ describe('VSyncClient', () => {
 		});
 	});
 
+
+		// ============================================================
+		// SPEC-SYNC-3WAY-FIX-001 T-005: flushQueue baseHash 전파
+		// ============================================================
+		describe('flushQueue baseHash 전파 (SPEC-SYNC-3WAY-FIX-001 T-005)', () => {
+			it('큐 아이템에 baseHash가 있으면 rawUpload에 전달해야 한다', async () => {
+				mockRequestUrl.mockResolvedValueOnce(
+					makeResponse({
+						json: { id: 1, path: 'test.md', hash: 'merged-hash', size_bytes: 0, version: 1 },
+					})
+				);
+
+				client.enqueue({
+					filePath: 'test.md',
+					content: 'content',
+					operation: 'upload',
+					timestamp: Date.now(),
+					retryCount: 0,
+					baseHash: 'server-hash',
+				});
+
+				await client.flushQueue();
+
+				// X-Base-Hash 헤더가 포함되어야 함
+				expect(mockRequestUrl).toHaveBeenCalledWith(
+					expect.objectContaining({
+						headers: expect.objectContaining({
+							'X-Base-Hash': 'server-hash',
+						}),
+					})
+				);
+				expect(client.getQueueSize()).toBe(0);
+			});
+
+			it('큐 아이템에 baseHash가 없으면 X-Base-Hash 헤더가 없어야 한다', async () => {
+				mockRequestUrl.mockResolvedValueOnce(
+					makeResponse({
+						json: { id: 1, path: 'test.md', hash: 'h', size_bytes: 0, version: 1 },
+					})
+				);
+
+				client.enqueue({
+					filePath: 'test.md',
+					content: 'content',
+					operation: 'upload',
+					timestamp: Date.now(),
+					retryCount: 0,
+				});
+
+				await client.flushQueue();
+
+				const calls = mockRequestUrl.mock.calls;
+				const lastCall = calls[calls.length - 1];
+				const headers = lastCall[0].headers || {};
+				expect(headers).not.toHaveProperty('X-Base-Hash');
+				expect(client.getQueueSize()).toBe(0);
+			});
+		});
 	// ============================================================
 	// SPEC-P6-UX-002: 409 Conflict 응답 처리 (REQ-UX-002)
 	// ============================================================
