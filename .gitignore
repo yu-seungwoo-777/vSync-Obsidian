@@ -19,3 +19,7 @@ Thumbs.db
 
 # Coverage
 coverage/
+
+# MoAI / Claude Code (should not ship to plugin repo)
+.claude/
+.moai/

@@ -106,6 +106,53 @@ describe('VSyncClient', () => {
 			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
 			expect(call.url).toContain(encodeURIComponent('notes/프로젝트.md'));
 		});
+
+		// ============================================================
+		// SPEC-SYNC-3WAY-FIX-001 T-001: X-Base-Hash 헤더
+		// ============================================================
+
+		it('baseHash 전달 시 X-Base-Hash 헤더를 포함해야 한다', async () => {
+			mockRequestUrl.mockResolvedValueOnce(
+				makeResponse({
+					json: { id: 1, path: 'test.md', hash: 'new-hash', size_bytes: 0, version: 1 },
+				})
+			);
+
+			await client.rawUpload('test.md', 'content', 'base-hash-abc');
+
+			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			expect(call.headers).toEqual(
+				expect.objectContaining({
+					'X-Base-Hash': 'base-hash-abc',
+				})
+			);
+		});
+
+		it('baseHash 미전달 시 X-Base-Hash 헤더가 없어야 한다', async () => {
+			mockRequestUrl.mockResolvedValueOnce(
+				makeResponse({
+					json: { id: 1, path: 'test.md', hash: 'h', size_bytes: 0, version: 1 },
+				})
+			);
+
+			await client.rawUpload('test.md', 'content');
+
+			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			expect(call.headers).not.toHaveProperty('X-Base-Hash');
+		});
+
+		it('baseHash가 undefined면 X-Base-Hash 헤더가 없어야 한다', async () => {
+			mockRequestUrl.mockResolvedValueOnce(
+				makeResponse({
+					json: { id: 1, path: 'test.md', hash: 'h', size_bytes: 0, version: 1 },
+				})
+			);
+
+			await client.rawUpload('test.md', 'content', undefined);
+
+			const call = mockRequestUrl.mock.calls[0][0] as RequestUrlParam;
+			expect(call.headers).not.toHaveProperty('X-Base-Hash');
+		});
 	});
 
 	describe('rawDownload', () => {

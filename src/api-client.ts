@@ -262,14 +262,20 @@ export class VSyncClient {
 
 	/** 파일 업로드 - PUT /v1/vault/{id}/raw/{path} */
 	// @MX:NOTE 409 시 ConflictResult 반환, 나머지 에러는 throw (REQ-UX-002)
-	async rawUpload(path: string, content: string): Promise<UploadResult | ConflictResult> {
+	async rawUpload(path: string, content: string, baseHash?: string): Promise<UploadResult | ConflictResult> {
 		const url = buildApiUrl(this._baseUrl, this._vaultId, 'raw', encodeURIComponent(path));
+
+		// @MX:NOTE baseHash 있으면 X-Base-Hash 헤더 추가 (3-way merge 트리거)
+		const headers = { ...this._getAuthAndDeviceHeaders() };
+		if (baseHash) {
+			headers['X-Base-Hash'] = baseHash;
+		}
 
 		try {
 			const response = await requestUrl({
 				url,
 				method: 'PUT',
-				headers: this._getAuthAndDeviceHeaders(),
+				headers,
 				contentType: 'text/markdown',
 				body: content,
 			});
