@@ -27,6 +27,7 @@ describe('Type Definitions', () => {
 				connection_mode: 'realtime',
 				device_id: '',
 				sync_enabled: false,
+				skipped_paths: [],
 			});
 		});
 

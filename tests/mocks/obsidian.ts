@@ -132,8 +132,26 @@ export class Modal {
 			empty: vi.fn(),
 			setText: vi.fn(),
 			setAttr: vi.fn(),
-			createEl: vi.fn().mockReturnValue({ setText: vi.fn(), setAttr: vi.fn(), appendChild: vi.fn(), addClass: vi.fn(), className: '', innerHTML: '', textContent: '', addEventListener: vi.fn() }),
-			createDiv: vi.fn().mockReturnValue({ setText: vi.fn(), setAttr: vi.fn(), appendChild: vi.fn(), addClass: vi.fn(), className: '', innerHTML: '', textContent: '' }),
+			createEl: vi.fn().mockReturnValue({
+				setText: vi.fn(),
+				setAttr: vi.fn(),
+				appendChild: vi.fn(),
+				addClass: vi.fn(),
+				className: '',
+				innerHTML: '',
+				textContent: '',
+				addEventListener: vi.fn()
+			}),
+			createDiv: vi.fn().mockReturnValue({
+				empty: vi.fn(),
+				setText: vi.fn(),
+				setAttr: vi.fn(),
+				appendChild: vi.fn(),
+				addClass: vi.fn(),
+				className: '',
+				innerHTML: '',
+				textContent: ''
+			}),
 			appendChild: vi.fn(),
 			addEventListener: vi.fn(),
 			className: '',
@@ -142,9 +160,9 @@ export class Modal {
 		};
 		// @ts-ignore - 테스트 환경에서 DOM 없이 동작
 		this.containerEl = mockEl as unknown as HTMLElement;
-		this.contentEl = this.containerEl;
-		this.titleEl = this.containerEl;
-		this.modalEl = this.containerEl;
+		this.contentEl = mockEl as unknown as HTMLElement;
+		this.titleEl = mockEl as unknown as HTMLElement;
+		this.modalEl = mockEl as unknown as HTMLElement;
 	}
 	open() { this._opened = true; this.onOpen(); }
 	close() { this._opened = false; this._onClose?.(); }
@@ -176,6 +194,7 @@ export class ItemView {
 				addEventListener: vi.fn(),
 			}),
 			createDiv: vi.fn().mockReturnValue({
+				empty: vi.fn(),
 				setText: vi.fn(),
 				setAttr: vi.fn(),
 				appendChild: vi.fn(),
@@ -217,13 +236,23 @@ export class PluginSettingTab {
 	hide() {}
 }
 
-// Setting 클래스 mock
+// Setting 클래스 mock — 모달 테스트에서 버튼/토글/드롭다운 핸들러 캡처 지원
 export class Setting {
 	settingEl: Record<string, unknown>;
 	controlEl: Record<string, unknown>;
 	infoEl: Record<string, unknown>;
 	nameEl: Record<string, unknown>;
 	descEl: Record<string, unknown>;
+	/** 마지막 addButton의 onClick 핸들러 (테스트에서 호출용) */
+	onClickHandler?: (...args: unknown[]) => void;
+	onClickHandlers: ((...args: unknown[]) => void)[] = [];
+	/** 마지막 addToggle의 onChange 핸들러 */
+	onChangeHandler?: (value: boolean) => void;
+	/** 마지막 addDropdown의 onChange 핸들러 */
+	onDropdownChangeHandler?: (value: string) => void;
+	onDropdownChangeHandlers: ((value: string) => void)[] = [];
+	/** 인스턴스 추적 (테스트에서 버튼/토글 찾기용) */
+	static _instances: Setting[] = [];
 
 	constructor(_containerEl: unknown) {
 		this.settingEl = {};
@@ -231,6 +260,7 @@ export class Setting {
 		this.infoEl = {};
 		this.nameEl = {};
 		this.descEl = {};
+		Setting._instances.push(this);
 	}
 
 	setName() { return this; }
@@ -250,7 +280,46 @@ export class Setting {
 		return this;
 	}
 	addButton(cb: (el: unknown) => void) {
-		cb({ setButtonText: vi.fn().mockReturnThis(), setCta: vi.fn().mockReturnThis(), onClick: vi.fn().mockReturnThis(), buttonEl: {} });
+		const self = this;
+		const btnMock = {
+			setButtonText: vi.fn().mockReturnThis(),
+			setCta: vi.fn().mockReturnThis(),
+			onClick: vi.fn().mockImplementation((handler: (...a: unknown[]) => void) => {
+				self.onClickHandler = handler;
+				self.onClickHandlers.push(handler);
+				return btnMock;
+			}),
+			buttonEl: {},
+		};
+		cb(btnMock);
+		return this;
+	}
+	addToggle(cb: (el: unknown) => void) {
+		const self = this;
+		const toggleMock = {
+			setValue: vi.fn().mockReturnThis(),
+			onChange: vi.fn().mockImplementation((handler: (v: boolean) => void) => {
+				self.onChangeHandler = handler;
+				return toggleMock;
+			}),
+			toggleEl: {},
+		};
+		cb(toggleMock);
+		return this;
+	}
+	addDropdown(cb: (el: unknown) => void) {
+		const self = this;
+		const ddMock = {
+			addOption: vi.fn().mockReturnThis(),
+			setValue: vi.fn().mockReturnThis(),
+			onChange: vi.fn().mockImplementation((handler: (v: string) => void) => {
+				self.onDropdownChangeHandler = handler;
+				self.onDropdownChangeHandlers.push(handler);
+				return ddMock;
+			}),
+			selectEl: {},
+		};
+		cb(ddMock);
 		return this;
 	}
 	addExtraButton() { return this; }

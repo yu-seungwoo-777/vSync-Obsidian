@@ -150,6 +150,7 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-001 onLayoutReady 래핑', () => {
 			server_url: 'https://example.com',
 			username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 			vault_id: 'vault-1',
+			hash_cache: { 'existing.md': 'baseHash' },
 		});
 
 		await plugin.onload();

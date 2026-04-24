@@ -15,6 +15,9 @@ import { SyncLogView } from './ui/sync-log-view';
 import { SearchInputModal, SearchModal } from './ui/search-modal';
 import { FileNotFoundError, VaultReadError, VaultWriteError } from './errors';
 import { validateVaultPath } from './utils/path';
+import { showDownloadModal } from './ui/initial-sync-download-modal';
+import { showUploadModal } from './ui/initial-sync-upload-modal';
+import { showConflictModal } from './ui/initial-sync-conflict-modal';
 import { syncLogger } from './sync-logger';
 
 export default class VSyncPlugin extends Plugin {
@@ -362,10 +365,74 @@ export default class VSyncPlugin extends Plugin {
 			this.registerInterval(window.setInterval(cb, ms));
 		});
 
-		// 초기 동기화 수행
-		this._syncEngine.performInitialSync();
+		// 최초 연결 감지: hash_cache가 비어 있으면 모달 플로우 (REQ-IS-006)
+		const hashCache = this.settings.hash_cache;
+		const isFirstTime = !hashCache || Object.keys(hashCache).length === 0;
+
+		if (isFirstTime) {
+			this._runInitialSyncWithModals();
+		} else {
+			// 재접속 사용자: 기존 자동 동기화 (REQ-IS-009)
+			this._syncEngine.performInitialSync();
+		}
 		this.updateStatus('idle');
 	}
+
+	/** 최초 연결 시 모달 플로우 실행 */
+	private async _runInitialSyncWithModals(): Promise<void> {
+		if (!this._syncEngine) return;
+
+		try {
+			// 1. 파일 분류 (REQ-IS-001)
+			const serverFiles = await this._syncEngine.listServerFiles();
+			const localFiles = this.app.vault.getFiles();
+			const classification = this._syncEngine.classifyFiles(serverFiles, localFiles);
+
+			// 2. auto 그룹 자동 동기화 (REQ-IS-002)
+			await this._syncEngine.executeAutoActions(classification.auto);
+
+			// 3. user 그룹 모달 순차 실행
+			// Step 1: 다운로드 (REQ-IS-003)
+			if (classification.user.downloads.length > 0) {
+				const dlPlan = await showDownloadModal(this.app, classification.user.downloads);
+				await this._syncEngine.executeSyncPlan({
+					downloadsToSync: dlPlan.selectedPaths,
+					uploadsToSync: [],
+					conflictResolutions: new Map(),
+					allSkippedPaths: dlPlan.skippedPaths,
+				});
+			}
+
+			// Step 2: 업로드 (REQ-IS-004)
+			if (classification.user.uploads.length > 0) {
+				const ulPlan = await showUploadModal(this.app, classification.user.uploads);
+				await this._syncEngine.executeSyncPlan({
+					downloadsToSync: [],
+					uploadsToSync: ulPlan.selectedPaths,
+					conflictResolutions: new Map(),
+					allSkippedPaths: ulPlan.skippedPaths,
+				});
+			}
+
+			// Step 3: 충돌 (REQ-IS-005)
+			if (classification.user.conflicts.length > 0) {
+				const cfPlan = await showConflictModal(this.app, classification.user.conflicts);
+				await this._syncEngine.executeSyncPlan({
+					downloadsToSync: [],
+					uploadsToSync: [],
+					conflictResolutions: cfPlan.resolutions,
+					allSkippedPaths: cfPlan.skippedPaths,
+				});
+			}
+
+			// 설정 영속화 (skipped_paths)
+			await this.saveSettings();
+			new Notice('초기 동기화가 완료되었습니다');
+		} catch (error) {
+			new Notice(`초기 동기화 실패: ${(error as Error).message}`);
+		}
+	}
+
 
 	/** 동기화 토글 (켜기/끄기) */
 	private async _toggleSync(): Promise<void> {
@@ -445,6 +512,7 @@ export default class VSyncPlugin extends Plugin {
 		this.settings.sync_enabled = false;
 		this.settings.last_event_id = undefined;
 		this.settings.hash_cache = undefined;
+			this.settings.skipped_paths = [];
 		await this.saveSettings();
 		this.updateStatus('not_configured');
 	}

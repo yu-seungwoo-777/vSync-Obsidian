@@ -9,7 +9,7 @@ import { computeHash } from './utils/hash';
 import { shouldSyncPath, normalizePath, isObsidianPath, isBinaryPath } from './utils/path';
 import { WSClient } from './services/ws-client';
 import { PollingFallback } from './services/polling-fallback';
-import type { VSyncSettings, SyncEvent, FileInfo, ConnectionMode, OfflineQueueItem, ConflictResult, DeviceInfo } from './types';
+import type { VSyncSettings, SyncEvent, FileInfo, ConnectionMode, OfflineQueueItem, ConflictResult, DeviceInfo, SyncClassification, LocalFileEntry, ConflictFile } from './types';
 import { SyncEventSchema } from './schemas/sync-event';
 
 // TTL for filtering vault modify events after download (ms)
@@ -23,6 +23,9 @@ const DEBOUNCE_DELAY_MS = 300;
 
 /** 대량 삭제 안전장치 임계값 — 한 번에 처리할 최대 삭제 이벤트 수 */
 const MAX_DELETE_BATCH = 50;
+
+/** skipped_paths 최대 항목 수 (NFR-IS-003) */
+const MAX_SKIPPED_PATHS = 5000;
 
 /** 동기화 엔진 */
 export class SyncEngine {
@@ -57,6 +60,7 @@ export class SyncEngine {
 
 	// @MX:NOTE Hash-based upload deduplication
 	private _hashCache: Map<string, string>;
+	private _skippedPathsSet = new Set<string>();
 	private _pendingUploads: Map<string, ReturnType<typeof setTimeout>> = new Map();
 	private _onCacheUpdate: ((cache: Map<string, string>) => void) | null = null;
 
@@ -75,6 +79,7 @@ export class SyncEngine {
 
 		// Hash cache: restored from settings or empty Map
 		this._hashCache = new Map(Object.entries(settings.hash_cache ?? {}));
+		this._skippedPathsSet = new Set(settings.skipped_paths ?? []);
 
 		if (restoredQueue && restoredQueue.length > 0) {
 			this._client.restoreQueue(restoredQueue);
@@ -106,6 +111,7 @@ export class SyncEngine {
 		this._client = this._createClient(settings);
 		this._lastEventId = settings.last_event_id || '';
 		this._hashCache = new Map(Object.entries(settings.hash_cache ?? {}));
+		this._skippedPathsSet = new Set(settings.skipped_paths ?? []);
 	}
 
 	/**
@@ -594,6 +600,9 @@ export class SyncEngine {
 
 		// .obsidian 경로는 무시
 		if (isObsidianPath(event.file_path)) return;
+
+		// 건너뛴 파일 경로는 무시 (REQ-IS-007)
+		if (this._skippedPathsSet.has(event.file_path)) return;
 
 		switch (event.event_type) {
 			case 'created':
@@ -1288,5 +1297,180 @@ export class SyncEngine {
 		if (!inServer && inLocal) return 'upload';
 		if (inServer && inLocal) return 'compare-hash';         // 새 파일 양쪽
 		return 'skip';                                           // 불가능한 상태
+	}
+
+	// ============================================================
+	// 초기 동기화 모달 (SPEC-INITIAL-SYNC-MODAL-001)
+	// ============================================================
+
+	/** 서버 파일 목록 조회 (모달 플로우용) */
+	async listServerFiles(): Promise<FileInfo[]> {
+		return this.listFilesPaginated();
+	}
+
+	/**
+	 * 파일 분류 — baseHash 유무에 따라 auto/user 그룹으로 분류 (REQ-IS-001)
+	 * @MX:NOTE 순수 함수 — 부수효과 없음, API 호출 없음
+	 * @MX:SPEC SPEC-INITIAL-SYNC-MODAL-001
+	 */
+	classifyFiles(
+		serverFiles: FileInfo[],
+		localFiles: Array<{ path: string }>,
+	): SyncClassification {
+		const classification: SyncClassification = {
+			auto: { downloads: [], uploads: [], deletions: [], skips: [] },
+			user: { downloads: [], uploads: [], conflicts: [] },
+		};
+
+		const basePathSet = new Set<string>();
+		for (const key of this._hashCache.keys()) {
+			if (shouldSyncPath(key)) basePathSet.add(key);
+		}
+
+		const serverPathSet = new Set(
+			serverFiles.map((f) => f.path).filter((p) => shouldSyncPath(p))
+		);
+		const localPathSet = new Set(
+			localFiles.map((f) => normalizePath(f.path)).filter((p) => p && shouldSyncPath(p)) as string[]
+		);
+
+		const allPaths = new Set([...basePathSet, ...serverPathSet, ...localPathSet]);
+
+		for (const path of allPaths) {
+			const inBase = basePathSet.has(path);
+			const inServer = serverPathSet.has(path);
+			const inLocal = localPathSet.has(path);
+
+			if (inBase) {
+				const action = this._determineFileAction(inBase, inServer, inLocal);
+				switch (action) {
+					case 'download': classification.auto.downloads.push(path); break;
+					case 'upload': classification.auto.uploads.push(path); break;
+					case 'delete-local':
+					case 'delete-server': classification.auto.deletions.push(path); break;
+					case 'skip':
+					case 'compare-hash': classification.auto.skips.push(path); break;
+				}
+			} else {
+				if (inServer && !inLocal) {
+					const sf = serverFiles.find((f) => f.path === path);
+					if (sf) classification.user.downloads.push(sf);
+				} else if (!inServer && inLocal) {
+					classification.user.uploads.push({ path, content: null });
+				} else if (inServer && inLocal) {
+					const sf = serverFiles.find((f) => f.path === path);
+					if (sf) classification.user.conflicts.push({ path, serverHash: sf.hash, localContent: null });
+				}
+			}
+		}
+
+		this._applyUserGroupLimit(classification);
+		return classification;
+	}
+
+	/** auto 그룹 파일 자동 동기화 (REQ-IS-002) */
+	async executeAutoActions(auto: SyncClassification['auto']): Promise<void> {
+		for (const path of auto.downloads) {
+			try { await this._downloadRemoteFile(path); } catch { this._noticeFn(`Auto-download failed: ${path}`); }
+		}
+		for (const path of auto.uploads) {
+			try { await this._uploadLocalFile(path); } catch { this._noticeFn(`Auto-upload failed: ${path}`); }
+		}
+		for (const path of auto.deletions) {
+			try {
+				if (await this._vault.readIfExists(path) !== null) {
+					await this._deleteLocalFile(path);
+				} else {
+					await this._client.deleteFile(path);
+				}
+				this._hashCache.delete(path);
+			} catch { this._noticeFn(`Auto-delete failed: ${path}`); }
+		}
+	}
+
+	/** 사용자 선택 기반 동기화 실행 (REQ-IS-003~005) */
+	async executeSyncPlan(plan: {
+		downloadsToSync: string[];
+		uploadsToSync: string[];
+		conflictResolutions: Map<string, 'server' | 'local' | 'skip'>;
+		allSkippedPaths: string[];
+	}): Promise<void> {
+		for (const path of plan.downloadsToSync) {
+			try { await this._downloadRemoteFile(path); } catch { this._noticeFn(`Download failed: ${path}`); }
+		}
+		for (const path of plan.uploadsToSync) {
+			try { await this._uploadLocalFile(path); } catch { this._noticeFn(`Upload failed: ${path}`); }
+		}
+		for (const [path, resolution] of plan.conflictResolutions) {
+			try {
+				if (resolution === 'server') {
+					await this._downloadRemoteFile(path);
+				} else if (resolution === 'local') {
+					await this._uploadLocalFile(path);
+				}
+			} catch { this._noticeFn(`Conflict resolution failed: ${path}`); }
+		}
+		for (const path of plan.allSkippedPaths) {
+			this.addSkippedPath(path);
+		}
+	}
+
+	// ── skipped_paths 관리 (REQ-IS-007, REQ-IS-008) ──
+
+	getSkippedPaths(): string[] {
+		return [...this._skippedPathsSet];
+	}
+
+	addSkippedPath(path: string): void {
+		this._skippedPathsSet.add(path);
+		if (this._skippedPathsSet.size > MAX_SKIPPED_PATHS) {
+			const iter = this._skippedPathsSet.values();
+			const oldest = iter.next().value;
+			if (oldest !== undefined) this._skippedPathsSet.delete(oldest);
+		}
+		this._persistSkippedPaths();
+	}
+
+	removeSkippedPath(path: string): void {
+		this._skippedPathsSet.delete(path);
+		this._persistSkippedPaths();
+	}
+
+	private _persistSkippedPaths(): void {
+		this._settings.skipped_paths = [...this._skippedPathsSet];
+	}
+
+	/** NFR-IS-002: user 그룹이 1000개 초과 시 분할 */
+	private _applyUserGroupLimit(classification: SyncClassification): void {
+		const MAX_MODAL_FILES = 1000;
+		const userTotal =
+			classification.user.downloads.length +
+			classification.user.uploads.length +
+			classification.user.conflicts.length;
+		if (userTotal <= MAX_MODAL_FILES) return;
+
+		let remaining = MAX_MODAL_FILES;
+		const dlKeep = classification.user.downloads.slice(0, remaining);
+		remaining -= dlKeep.length;
+		const ulKeep = classification.user.uploads.slice(0, Math.max(0, remaining));
+		remaining -= ulKeep.length;
+		const cfKeep = classification.user.conflicts.slice(0, Math.max(0, remaining));
+
+		for (const f of classification.user.downloads.slice(dlKeep.length)) {
+			classification.auto.downloads.push(f.path);
+		}
+		for (const f of classification.user.uploads.slice(ulKeep.length)) {
+			classification.auto.uploads.push(f.path);
+		}
+		for (const f of classification.user.conflicts.slice(cfKeep.length)) {
+			classification.auto.downloads.push(f.path);
+		}
+
+		classification.user.downloads = dlKeep;
+		classification.user.uploads = ulKeep;
+		classification.user.conflicts = cfKeep;
+
+		const overflow = userTotal - MAX_MODAL_FILES;
+		this._noticeFn(`나머지 ${overflow}개 파일은 자동 처리됩니다`);
 	}
 }

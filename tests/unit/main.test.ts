@@ -49,6 +49,7 @@ vi.mock('../../src/settings', () => ({
 		api_key: '',
 		vault_id: '',
 		sync_interval: 30,
+				hash_cache: { 'existing.md': 'baseHash' },
 		device_id: '',
 	},
 }));
@@ -160,6 +161,7 @@ describe('VSyncPlugin', () => {
 				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 				sync_interval: 30,
+				hash_cache: { 'existing.md': 'baseHash' },
 			});
 
 			await plugin.onload();
@@ -406,6 +408,7 @@ describe('VSyncPlugin', () => {
 				username: 'testuser', password: '', session_token: 'test-token', sync_enabled: true,
 				vault_id: 'vault-1',
 				sync_interval: 30,
+				hash_cache: { 'existing.md': 'baseHash' },
 				__offlineQueue: [
 					{
 						file_path: 'queued.md',

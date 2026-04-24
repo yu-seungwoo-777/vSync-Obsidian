@@ -33,6 +33,8 @@ export interface VSyncSettings {
 	password: string;
 	/** JWT 세션 토큰 (로그인 성공 시 발급) */
 	session_token: string;
+	/** 건너뛴 파일 경로 목록 (REQ-IS-007, REQ-IS-008) */
+	skipped_paths?: string[];
 }
 
 /** 기본 설정값 */
@@ -46,6 +48,7 @@ export const DEFAULT_SETTINGS: VSyncSettings = {
 	username: '',
 	password: '',
 	session_token: '',
+	skipped_paths: [],
 };
 
 // ============================================================
@@ -149,7 +152,75 @@ export interface SyncState {
 }
 
 // ============================================================
-// Module 4: 실시간 동기화 타입 (SPEC-P3-REALTIME-001)
+// Module 4: 초기 동기화 모달 타입 (SPEC-INITIAL-SYNC-MODAL-001)
+// ============================================================
+
+/**
+ * 로컬 파일 항목 (REQ-IS-001)
+ */
+export interface LocalFileEntry {
+	path: string;
+	content: string | null;
+}
+
+/**
+ * 충돌 파일 정보 (REQ-IS-001)
+ */
+export interface ConflictFile {
+	path: string;
+	serverHash: string;
+	localContent: string | null;
+}
+
+/**
+ * 동기화 분류 결과 (REQ-IS-001)
+ */
+export interface SyncClassification {
+	auto: {
+		/** baseHash 있음, 서버 변경 + 로컬 미변경 */
+		downloads: string[];
+		/** baseHash 있음, 로컬 변경 + 서버 미변경 */
+		uploads: string[];
+		/** baseHash 있음, 한쪽 삭제 */
+		deletions: string[];
+		/** 양쪽 동일 내용 */
+		skips: string[];
+	};
+	user: {
+		/** 서버에만 존재 (base 없음) */
+		downloads: FileInfo[];
+		/** 로컬에만 존재 (base 없음) */
+		uploads: LocalFileEntry[];
+		/** 양쪽 존재 + 내용 다름 (base 없음) */
+		conflicts: ConflictFile[];
+	};
+}
+
+/** 모달 사용자 선택 결과 (REQ-IS-003~005) */
+export interface SyncPlan {
+	downloadsToSync: string[];
+	uploadsToSync: string[];
+	conflictResolutions: Map<string, 'server' | 'local' | 'skip'>;
+	allSkippedPaths: string[];
+}
+
+export interface DownloadPlan {
+	selectedPaths: string[];
+	skippedPaths: string[];
+}
+
+export interface UploadPlan {
+	selectedPaths: string[];
+	skippedPaths: string[];
+}
+
+export interface ConflictPlan {
+	resolutions: Map<string, 'server' | 'local' | 'skip'>;
+	skippedPaths: string[];
+}
+
+// ============================================================
+// Module 5: 실시간 동기화 타입 (SPEC-P3-REALTIME-001)
 // ============================================================
 
 // @MX:NOTE 연결 모드: 실시간(WS) 또는 폴링
