@@ -25,6 +25,12 @@ jobs:
         id: version
         run: echo "tag=$(git describe --abbrev=0 --tags)" >> $GITHUB_OUTPUT
 
+      - name: Get Previous Tag
+        id: prev_tag
+        run: |
+          prev=$(git tag --sort=-version:refname | sed -n '2p')
+          echo "prev=${prev:-}" >> $GITHUB_OUTPUT
+
       - name: Build
         run: |
           npm ci
@@ -36,9 +42,51 @@ jobs:
           cp main.js manifest.json styles.css README.md ${{ github.event.repository.name }}
           zip -r ${{ github.event.repository.name }}.zip ${{ github.event.repository.name }}
 
+      - name: Generate Release Notes
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.tag }}"
+          DATE=$(date +%Y-%m-%d)
+          PREV="${{ steps.prev_tag.outputs.prev }}"
+
+          # Extract changelog from manifest.json description
+          DESC=$(node -p "require('./manifest.json').description")
+
+          # Build changelog link
+          if [ -n "$PREV" ]; then
+            DIFF_LINK="**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV}...${VERSION}"
+          else
+            DIFF_LINK="**Full Changelog**: https://github.com/${{ github.repository }}/commits/${VERSION}"
+          fi
+
+          cat > release_notes.md << BODY
+          ## What's Changed
+
+          <!-- 수동으로 변경 사항을 작성하세요 -->
+          <!-- 예: - 실시간 동기화 WebSocket 연결 안정성 개선 -->
+          <!-- 예: - 충돌 해결 UI 개선 -->
+
+          ## 설치
+
+          1. \`main.js\`, \`manifest.json\`, \`styles.css\` 를 다운로드
+          2. 볼트의 \`.obsidian/plugins/vsync/\` 폴더에 복사
+          3. Obsidian 재시작
+
+          또는 Obsidian 커뮤니티 플러그인에서 자동 업데이트.
+
+          ---
+
+          ${DIFF_LINK}
+
+          BODY
+
+          # Remove leading whitespace from heredoc
+          sed -i 's/^        //' release_notes.md
+
       - name: Create Release and Upload Assets
         uses: softprops/action-gh-release@v2
         with:
+          body_path: release_notes.md
           files: |
             ${{ github.event.repository.name }}.zip
             main.js
