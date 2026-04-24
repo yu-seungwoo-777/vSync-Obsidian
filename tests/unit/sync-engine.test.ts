@@ -399,6 +399,8 @@ describe('SyncEngine', () => {
 			await engine.performFullSync();
 
 			expect(mockApiClient.rawDownload).toHaveBeenCalledWith('server-only.md');
+			// sf.hash 전달로 내부 listFiles 재호출이 없어야 함
+			expect(mockApiClient.listFiles).toHaveBeenCalledTimes(1);
 		});
 
 		it('로컬에만 있는 파일 → baseHash 없이 업로드', async () => {
