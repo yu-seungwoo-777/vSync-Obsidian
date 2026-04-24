@@ -132,6 +132,7 @@ jobs:
             main.js
             manifest.json
             styles.css
+            versions.json
           name: ${{ steps.version.outputs.tag }}
           tag_name: ${{ steps.version.outputs.tag }}
           draft: true
