@@ -3,6 +3,7 @@
 import { PluginSettingTab, Notice, Setting, type Plugin } from 'obsidian';
 import type { VSyncSettings } from './types';
 import { ConnectModal } from './ui/connect-modal';
+import { UpdateModal } from './ui/update-modal';
 
 export class VSyncSettingTab extends PluginSettingTab {
 	plugin: Plugin & {
@@ -111,6 +112,32 @@ export class VSyncSettingTab extends PluginSettingTab {
 			intervalSetting.controlEl.style.opacity = '0.4';
 			intervalSetting.controlEl.style.pointerEvents = 'none';
 		}
+
+			// ── 플러그인 업데이트 ──
+			containerEl.createEl('h3', { text: '업데이트' });
+
+			new Setting(containerEl)
+				.setName('현재 버전')
+				.setDesc(`v${this.plugin.manifest?.version ?? 'unknown'}`)
+				.addButton((btn) => {
+					btn
+						.setButtonText('업데이트 확인')
+						.setDisabled(!isConnected)
+						.onClick(() => {
+							const s = this.plugin.settings;
+							const pluginDir = '.obsidian/plugins/vsync';
+							const modal = new UpdateModal(
+								this.app,
+								s.server_url,
+								this.plugin.manifest?.version ?? '0.0.0',
+								pluginDir,
+							);
+							modal.open();
+						});
+					if (!isConnected) {
+						btn.setTooltip('서버에 연결 후 사용 가능합니다');
+					}
+				});
 	}
 
 	/** 서버 연결 버튼 */

@@ -54,6 +54,14 @@ export interface VaultInfo {
 	name: string;
 }
 
+/** 플러그인 업데이트 정보 */
+export interface PluginUpdateInfo {
+	hasUpdate: boolean;
+	currentVersion: string;
+	latestVersion: string;
+	files: string[];
+}
+
 // @MX:NOTE 오프라인 큐 영속화 콜백 (SPEC-P6-PERSIST-004)
 /** 큐 영속화 콜백 — plugin.saveData()를 래핑 */
 export type PersistCallback = (items: OfflineQueueItem[]) => void;
@@ -222,6 +230,60 @@ export async function fetchVaults(
 	return data.vaults ?? [];
 }
 
+/** 플러그인 업데이트 확인 - GET /v1/plugin/version (인증 불필요) */
+export async function checkPluginUpdate(
+	serverUrl: string,
+	currentVersion: string,
+): Promise<PluginUpdateInfo> {
+	const url = `${serverUrl.replace(/\/+$/, '')}/v1/plugin/version`;
+	const response = await requestUrl({
+		url,
+		method: 'GET',
+	});
+	const data = response.json as { version: string; minAppVersion: string; files: string[] };
+
+	// 시맨틱 버전 비교
+	const latestVersion = data.version;
+	const hasUpdate = compareVersions(latestVersion, currentVersion) > 0;
+
+	return {
+		hasUpdate,
+		currentVersion,
+		latestVersion,
+		files: data.files,
+	};
+}
+
+/** 플러그인 파일 다운로드 - GET /v1/plugin/download/:filename (인증 불필요) */
+export async function downloadPluginFile(
+	serverUrl: string,
+	filename: string,
+): Promise<string | ArrayBuffer> {
+	const url = `${serverUrl.replace(/\/+$/, '')}/v1/plugin/download/${filename}`;
+	const response = await requestUrl({
+		url,
+		method: 'GET',
+	});
+	// main.js와 styles.css는 text, manifest.json은 JSON
+	if (filename === 'manifest.json') {
+		return response.text;
+	}
+	return response.text;
+}
+
+/** 시맨틱 버전 비교 (a > b → 양수, a < b → 음수, a == b → 0) */
+function compareVersions(a: string, b: string): number {
+	const partsA = a.split('.').map(Number);
+	const partsB = b.split('.').map(Number);
+	const len = Math.max(partsA.length, partsB.length);
+	for (let i = 0; i < len; i++) {
+		const numA = partsA[i] ?? 0;
+		const numB = partsB[i] ?? 0;
+		if (numA !== numB) return numA - numB;
+	}
+	return 0;
+}
+
 export class VSyncClient {
 	private _baseUrl: string;
 	private _vaultId: string;
@@ -309,7 +371,7 @@ export class VSyncClient {
 			const response = await requestUrl({
 				url,
 				method: 'GET',
-				headers: this._getAuthHeaders(),
+				headers: this._getAuthAndDeviceHeaders(),
 			});
 			return response.text;
 		} catch (error) {
@@ -386,7 +448,7 @@ export class VSyncClient {
 			const response = await requestUrl({
 				url,
 				method: 'GET',
-				headers: this._getAuthHeaders(),
+				headers: this._getAuthAndDeviceHeaders(),
 			});
 			return response.arrayBuffer;
 		} catch (error) {
@@ -410,7 +472,7 @@ export class VSyncClient {
 		const response = await requestUrl({
 			url,
 			method: 'GET',
-			headers: this._getAuthHeaders(),
+			headers: this._getAuthAndDeviceHeaders(),
 		});
 		// 하위 호환: 배열 응답(구형) 또는 { files, hasMore } (신형)
 		const data = response.json;
@@ -430,7 +492,7 @@ export class VSyncClient {
 		const response = await requestUrl({
 			url,
 			method: 'GET',
-			headers: this._getAuthHeaders(),
+			headers: this._getAuthAndDeviceHeaders(),
 		});
 		const data = response.json as { events: SyncEvent[] };
 		return data.events || [];
@@ -443,7 +505,7 @@ export class VSyncClient {
 		await requestUrl({
 			url,
 			method: 'PUT',
-			headers: this._getAuthHeaders(),
+			headers: this._getAuthAndDeviceHeaders(),
 			contentType: 'application/json',
 			body: JSON.stringify({
 				device_id: this._deviceId,
@@ -519,7 +581,7 @@ export class VSyncClient {
 		const response = await requestUrl({
 			url,
 			method: 'GET',
-			headers: this._getAuthHeaders(),
+			headers: this._getAuthAndDeviceHeaders(),
 		});
 		const data = response.json as { devices: DeviceInfo[] };
 		return data.devices ?? [];
@@ -544,7 +606,7 @@ export class VSyncClient {
 		const response = await requestUrl({
 			url,
 			method: 'GET',
-			headers: this._getAuthHeaders(),
+			headers: this._getAuthAndDeviceHeaders(),
 		});
 		return response.json as SearchResponse;
 	}
@@ -555,7 +617,7 @@ export class VSyncClient {
 		const response = await requestUrl({
 			url,
 			method: 'GET',
-			headers: this._getAuthHeaders(),
+			headers: this._getAuthAndDeviceHeaders(),
 		});
 		const data = response.json as { conflicts: ConflictInfo[] };
 		return data.conflicts ?? [];

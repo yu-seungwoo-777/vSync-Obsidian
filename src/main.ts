@@ -19,6 +19,8 @@ import { showDownloadModal } from './ui/initial-sync-download-modal';
 import { showUploadModal } from './ui/initial-sync-upload-modal';
 import { showConflictModal } from './ui/initial-sync-conflict-modal';
 import { syncLogger } from './sync-logger';
+import { checkPluginUpdate } from './api-client';
+import { UpdateModal } from './ui/update-modal';
 
 export default class VSyncPlugin extends Plugin {
 	settings: VSyncSettings = { ...DEFAULT_SETTINGS };
@@ -146,6 +148,14 @@ export default class VSyncPlugin extends Plugin {
 
 		// 명령 등록
 		this._registerCommands();
+
+			// @MX:NOTE 서버 연결 시 자동 업데이트 체크
+			if (this._isConfigured()) {
+				this._workspaceAdapter!.onLayoutReady(() => {
+					this._checkForUpdates();
+				});
+			}
+
 
 		// 설정 탭 등록 + 디바이스 API 주입 (REQ-PA-011, REQ-PA-012)
 		const settingTab = new VSyncSettingTab(this.app, this);
@@ -500,6 +510,22 @@ export default class VSyncPlugin extends Plugin {
 		return false;
 	}
 
+		/** 서버에서 업데이트 확인 (백그라운드) */
+		private async _checkForUpdates(): Promise<void> {
+			try {
+				const info = await checkPluginUpdate(
+					this.settings.server_url,
+					this.manifest.version,
+				);
+				if (info.hasUpdate) {
+					new Notice(`vSync 업데이트 available: v${info.latestVersion} (현재: v${info.currentVersion})`);
+				}
+			} catch {
+				// 업데이트 체크 실패는 조용히 무시
+			}
+		}
+
+
 	/** 연결 해제 — 세션 초기화 및 동기화 중지 */
 	async disconnect(): Promise<void> {
 		if (this._syncEngine) {
@@ -579,6 +605,26 @@ export default class VSyncPlugin extends Plugin {
 			name: 'Toggle Sync On/Off',
 			callback: () => this._toggleSync(),
 		});
+
+			// 플러그인 업데이트 확인
+			this.addCommand({
+				id: 'vsync-check-update',
+				name: 'Check for plugin update',
+				callback: () => {
+					if (!this._isConfigured()) {
+						new Notice('서버에 연결 후 사용 가능합니다');
+						return;
+					}
+					const pluginDir = '.obsidian/plugins/vsync';
+					const modal = new UpdateModal(
+						this.app,
+						this.settings.server_url,
+						this.manifest.version,
+						pluginDir,
+					);
+					modal.open();
+				},
+			});
 	}
 
 	/** 충돌 해결 뷰 활성화 (REQ-UX-009) */
