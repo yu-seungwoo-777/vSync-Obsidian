@@ -150,7 +150,8 @@ export class Modal {
 				addClass: vi.fn(),
 				className: '',
 				innerHTML: '',
-				textContent: ''
+				textContent: '',
+				style: {} as Record<string, string>,
 			}),
 			appendChild: vi.fn(),
 			addEventListener: vi.fn(),
@@ -202,6 +203,7 @@ export class ItemView {
 				className: '',
 				innerHTML: '',
 				textContent: '',
+				style: {} as Record<string, string>,
 			}),
 			appendChild: vi.fn(),
 			addEventListener: vi.fn(),

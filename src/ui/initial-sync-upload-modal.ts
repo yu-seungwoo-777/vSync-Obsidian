@@ -6,11 +6,27 @@ import type { LocalFileEntry, UploadPlan } from '../types';
 
 const MAX_MODAL_FILES = 1000;
 
+function getFolder(path: string): string {
+	const idx = path.lastIndexOf('/');
+	return idx > 0 ? path.substring(0, idx) : '/';
+}
+
+function groupByFolder<T extends { path: string }>(files: T[]): Map<string, T[]> {
+	const map = new Map<string, T[]>();
+	for (const file of files) {
+		const folder = getFolder(file.path);
+		if (!map.has(folder)) map.set(folder, []);
+		map.get(folder)!.push(file);
+	}
+	return new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+}
+
 export class InitialSyncUploadModal extends Modal {
 	private _files: LocalFileEntry[];
 	private _onResolve: (plan: UploadPlan) => void;
 	private _selectedPaths: Set<string>;
 	private _remainingFiles: LocalFileEntry[];
+	private _resolved = false;
 
 	constructor(
 		app: any,
@@ -26,7 +42,7 @@ export class InitialSyncUploadModal extends Modal {
 
 	onOpen(): void {
 		if (this._files.length === 0) {
-			this._onResolve({ selectedPaths: [], skippedPaths: [] });
+			this._resolve({ selectedPaths: [], skippedPaths: [] });
 			this.close();
 			return;
 		}
@@ -39,7 +55,6 @@ export class InitialSyncUploadModal extends Modal {
 			text: '로컬에만 존재하는 파일입니다. 업로드할 파일을 선택하세요.',
 		});
 
-		// 개인 파일 경고
 		contentEl.createEl('p', {
 			text: '⚠ 업로드 시 개인 파일이 서버에 전송됩니다.',
 			cls: 'mod-warning',
@@ -57,7 +72,6 @@ export class InitialSyncUploadModal extends Modal {
 			});
 		}
 
-		// 전체 선택/해제
 		new Setting(contentEl)
 			.setName('전체 선택')
 			.addToggle((toggle) => {
@@ -73,9 +87,11 @@ export class InitialSyncUploadModal extends Modal {
 			});
 
 		const listEl = contentEl.createDiv({ cls: 'initial-sync-file-list' });
+		listEl.style.maxHeight = '400px';
+		listEl.style.overflowY = 'auto';
+		listEl.style.marginBottom = '12px';
 		this._renderFileList(listEl);
 
-		// 버튼 영역
 		new Setting(contentEl)
 			.addButton((btn) =>
 				btn.setButtonText('선택 삭제').onClick(() => {
@@ -87,8 +103,7 @@ export class InitialSyncUploadModal extends Modal {
 			)
 			.addButton((btn) =>
 				btn.setButtonText('건너뛰기').onClick(() => {
-					const skipped = this._files.map((f) => f.path);
-					this._onResolve({ selectedPaths: [], skippedPaths: skipped });
+					this._resolve({ selectedPaths: [], skippedPaths: this._files.map((f) => f.path) });
 					this.close();
 				}),
 			)
@@ -101,34 +116,60 @@ export class InitialSyncUploadModal extends Modal {
 						const skipped = this._files
 							.map((f) => f.path)
 							.filter((p) => !this._selectedPaths.has(p));
-						this._onResolve({ selectedPaths: selected, skippedPaths: skipped });
+						this._resolve({ selectedPaths: selected, skippedPaths: skipped });
 						this.close();
 					}),
 			);
 	}
 
+	private _resolve(plan: UploadPlan): void {
+		if (this._resolved) return;
+		this._resolved = true;
+		this._onResolve(plan);
+	}
+
 	private _renderFileList(container: HTMLElement): void {
 		container.empty();
 		const filesToShow = this._remainingFiles.slice(0, MAX_MODAL_FILES);
+		const folders = groupByFolder(filesToShow);
 
-		for (const file of filesToShow) {
+		for (const [folder, files] of folders) {
+			const folderLabel = folder === '/' ? '/ (루트)' : folder;
+
 			new Setting(container)
-				.setName(file.path)
+				.setName(folderLabel)
+				.setDesc(`${files.length}개 파일`)
+				.setHeading()
 				.addToggle((toggle) => {
-					toggle.setValue(this._selectedPaths.has(file.path));
+					const allSelected = files.every((f) => this._selectedPaths.has(f.path));
+					toggle.setValue(allSelected);
 					toggle.onChange((v) => {
-						if (v) {
-							this._selectedPaths.add(file.path);
-						} else {
-							this._selectedPaths.delete(file.path);
+						for (const f of files) {
+							if (v) this._selectedPaths.add(f.path);
+							else this._selectedPaths.delete(f.path);
 						}
+						this._renderFileList(container);
 					});
 				});
+
+			for (const file of files) {
+				const fileName = file.path.substring(file.path.lastIndexOf('/') + 1) || file.path;
+				new Setting(container)
+					.setName(fileName)
+					.addToggle((toggle) => {
+						toggle.setValue(this._selectedPaths.has(file.path));
+						toggle.onChange((v) => {
+							if (v) this._selectedPaths.add(file.path);
+							else this._selectedPaths.delete(file.path);
+						});
+					});
+			}
 		}
 	}
 
 	onClose(): void {
 		this.contentEl.empty();
+		this._resolve({ selectedPaths: [], skippedPaths: this._files.map((f) => f.path) });
 	}
 }
 

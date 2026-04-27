@@ -27,6 +27,8 @@ export class ConnectModal extends Modal {
 	private _testResult: { success: boolean; message: string } | null = null;
 
 	/** 입력값 (모달 내 임시) */
+	/** 디바이스 ID */
+	private _deviceId = "";
 	private _serverUrl = '';
 	private _username = '';
 	private _password = '';
@@ -42,6 +44,7 @@ export class ConnectModal extends Modal {
 	) {
 		super(app);
 		this._settings = settings;
+		this._deviceId = settings.device_id;
 		this._onConnect = onConnect;
 		this._onDisconnect = onDisconnect;
 
@@ -259,6 +262,7 @@ export class ConnectModal extends Modal {
 				method: 'GET',
 				headers: {
 					Authorization: `Bearer ${this._loginResult.token}`,
+					'X-Device-ID': this._deviceId,
 				},
 			});
 			const files = Array.isArray(resp.json) ? resp.json : (resp.json as any).files ?? []; // eslint-disable-line @typescript-eslint/no-explicit-any

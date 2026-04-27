@@ -6,10 +6,28 @@ import type { FileInfo, DownloadPlan } from '../types';
 
 const MAX_MODAL_FILES = 1000;
 
+/** 파일 경로에서 폴더 경로 추출 */
+function getFolder(path: string): string {
+	const idx = path.lastIndexOf('/');
+	return idx > 0 ? path.substring(0, idx) : '/';
+}
+
+/** 파일 목록을 폴더별로 그룹핑 (알파벳 정렬) */
+function groupByFolder<T extends { path: string }>(files: T[]): Map<string, T[]> {
+	const map = new Map<string, T[]>();
+	for (const file of files) {
+		const folder = getFolder(file.path);
+		if (!map.has(folder)) map.set(folder, []);
+		map.get(folder)!.push(file);
+	}
+	return new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+}
+
 export class InitialSyncDownloadModal extends Modal {
 	private _files: FileInfo[];
 	private _onResolve: (plan: DownloadPlan) => void;
 	private _selectedPaths: Set<string>;
+	private _resolved = false;
 
 	constructor(
 		app: any,
@@ -23,9 +41,8 @@ export class InitialSyncDownloadModal extends Modal {
 	}
 
 	onOpen(): void {
-		// 파일이 없으면 즉시 빈 plan 반환
 		if (this._files.length === 0) {
-			this._onResolve({ selectedPaths: [], skippedPaths: [] });
+			this._resolve({ selectedPaths: [], skippedPaths: [] });
 			this.close();
 			return;
 		}
@@ -42,7 +59,6 @@ export class InitialSyncDownloadModal extends Modal {
 			cls: 'mod-info',
 		});
 
-		// NFR-IS-002: 대량 파일 안내
 		if (this._files.length > MAX_MODAL_FILES) {
 			contentEl.createEl('p', {
 				text: `나머지 ${this._files.length - MAX_MODAL_FILES}개 파일은 자동 처리됩니다`,
@@ -50,7 +66,6 @@ export class InitialSyncDownloadModal extends Modal {
 			});
 		}
 
-		// 전체 선택/해제
 		new Setting(contentEl)
 			.setName('전체 선택')
 			.addToggle((toggle) => {
@@ -66,14 +81,15 @@ export class InitialSyncDownloadModal extends Modal {
 			});
 
 		const listEl = contentEl.createDiv({ cls: 'initial-sync-file-list' });
+		listEl.style.maxHeight = '400px';
+		listEl.style.overflowY = 'auto';
+		listEl.style.marginBottom = '12px';
 		this._renderFileList(listEl);
 
-		// 버튼 영역
 		new Setting(contentEl)
 			.addButton((btn) =>
 				btn.setButtonText('건너뛰기').onClick(() => {
-					const skipped = this._files.map((f) => f.path);
-					this._onResolve({ selectedPaths: [], skippedPaths: skipped });
+					this._resolve({ selectedPaths: [], skippedPaths: this._files.map((f) => f.path) });
 					this.close();
 				}),
 			)
@@ -86,34 +102,61 @@ export class InitialSyncDownloadModal extends Modal {
 						const skipped = this._files
 							.map((f) => f.path)
 							.filter((p) => !this._selectedPaths.has(p));
-						this._onResolve({ selectedPaths: selected, skippedPaths: skipped });
+						this._resolve({ selectedPaths: selected, skippedPaths: skipped });
 						this.close();
 					}),
 			);
 	}
 
+	private _resolve(plan: DownloadPlan): void {
+		if (this._resolved) return;
+		this._resolved = true;
+		this._onResolve(plan);
+	}
+
 	private _renderFileList(container: HTMLElement): void {
 		container.empty();
 		const filesToShow = this._files.slice(0, MAX_MODAL_FILES);
+		const folders = groupByFolder(filesToShow);
 
-		for (const file of filesToShow) {
+		for (const [folder, files] of folders) {
+			const folderLabel = folder === '/' ? '/ (루트)' : folder;
+
 			new Setting(container)
-				.setName(file.path)
+				.setName(folderLabel)
+				.setDesc(`${files.length}개 파일`)
+				.setHeading()
 				.addToggle((toggle) => {
-					toggle.setValue(this._selectedPaths.has(file.path));
+					const allSelected = files.every((f) => this._selectedPaths.has(f.path));
+					toggle.setValue(allSelected);
 					toggle.onChange((v) => {
-						if (v) {
-							this._selectedPaths.add(file.path);
-						} else {
-							this._selectedPaths.delete(file.path);
+						for (const f of files) {
+							if (v) this._selectedPaths.add(f.path);
+							else this._selectedPaths.delete(f.path);
 						}
+						this._renderFileList(container);
 					});
 				});
+
+			for (const file of files) {
+				const fileName = file.path.substring(file.path.lastIndexOf('/') + 1) || file.path;
+				new Setting(container)
+					.setName(fileName)
+					.addToggle((toggle) => {
+						toggle.setValue(this._selectedPaths.has(file.path));
+						toggle.onChange((v) => {
+							if (v) this._selectedPaths.add(file.path);
+							else this._selectedPaths.delete(file.path);
+						});
+					});
+			}
 		}
 	}
 
 	onClose(): void {
 		this.contentEl.empty();
+		// X 버튼으로 닫은 경우: 전체 건너뛰기와 동일하게 처리
+		this._resolve({ selectedPaths: [], skippedPaths: this._files.map((f) => f.path) });
 	}
 }
 

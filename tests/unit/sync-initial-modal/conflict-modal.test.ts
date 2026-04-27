@@ -104,8 +104,8 @@ describe('InitialSyncConflictModal (AC-005)', () => {
 		modal.onOpen();
 
 		const ddHandlers = getDropdownHandlers();
-		ddHandlers[1]('local');
-		ddHandlers[2]('skip');
+		ddHandlers[2]('local');
+		ddHandlers[3]('skip');
 
 		getButtonHandlers()[1]();
 

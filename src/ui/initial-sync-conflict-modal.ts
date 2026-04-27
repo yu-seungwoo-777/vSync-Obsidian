@@ -6,10 +6,26 @@ import type { ConflictFile, ConflictPlan } from '../types';
 
 const MAX_MODAL_FILES = 1000;
 
+function getFolder(path: string): string {
+	const idx = path.lastIndexOf('/');
+	return idx > 0 ? path.substring(0, idx) : '/';
+}
+
+function groupByFolder<T extends { path: string }>(files: T[]): Map<string, T[]> {
+	const map = new Map<string, T[]>();
+	for (const file of files) {
+		const folder = getFolder(file.path);
+		if (!map.has(folder)) map.set(folder, []);
+		map.get(folder)!.push(file);
+	}
+	return new Map([...map.entries()].sort((a, b) => a[0].localeCompare(b[0])));
+}
+
 export class InitialSyncConflictModal extends Modal {
 	private _files: ConflictFile[];
 	private _onResolve: (plan: ConflictPlan) => void;
 	private _resolutions: Map<string, 'server' | 'local' | 'skip'>;
+	private _resolved = false;
 
 	constructor(
 		app: any,
@@ -19,13 +35,12 @@ export class InitialSyncConflictModal extends Modal {
 		super(app);
 		this._files = files;
 		this._onResolve = onResolve;
-		// 기본 선택: 서버 (SPEC REQ-IS-005)
 		this._resolutions = new Map(files.map((f) => [f.path, 'server'] as const));
 	}
 
 	onOpen(): void {
 		if (this._files.length === 0) {
-			this._onResolve({ resolutions: new Map(), skippedPaths: [] });
+			this._resolve({ resolutions: new Map(), skippedPaths: [] });
 			this.close();
 			return;
 		}
@@ -50,15 +65,18 @@ export class InitialSyncConflictModal extends Modal {
 		}
 
 		const listEl = contentEl.createDiv({ cls: 'initial-sync-file-list' });
+		listEl.style.maxHeight = '400px';
+		listEl.style.overflowY = 'auto';
+		listEl.style.marginBottom = '12px';
 		this._renderFileList(listEl);
 
-		// 버튼 영역
 		new Setting(contentEl)
 			.addButton((btn) =>
 				btn.setButtonText('건너뛰기(전체)').onClick(() => {
-					const resolutions = new Map<string, 'server' | 'local' | 'skip'>();
-					const skipped = this._files.map((f) => f.path);
-					this._onResolve({ resolutions, skippedPaths: skipped });
+					this._resolve({
+						resolutions: new Map(),
+						skippedPaths: this._files.map((f) => f.path),
+					});
 					this.close();
 				}),
 			)
@@ -71,34 +89,68 @@ export class InitialSyncConflictModal extends Modal {
 						for (const [path, resolution] of this._resolutions) {
 							if (resolution === 'skip') skipped.push(path);
 						}
-						this._onResolve({ resolutions: this._resolutions, skippedPaths: skipped });
+						this._resolve({ resolutions: this._resolutions, skippedPaths: skipped });
 						this.close();
 					}),
 			);
 	}
 
+	private _resolve(plan: ConflictPlan): void {
+		if (this._resolved) return;
+		this._resolved = true;
+		this._onResolve(plan);
+	}
+
 	private _renderFileList(container: HTMLElement): void {
 		container.empty();
 		const filesToShow = this._files.slice(0, MAX_MODAL_FILES);
+		const folders = groupByFolder(filesToShow);
 
-		for (const file of filesToShow) {
-			const setting = new Setting(container).setName(file.path);
+		for (const [folder, files] of folders) {
+			const folderLabel = folder === '/' ? '/ (루트)' : folder;
 
-			// 라디오 버튼 그룹을 드롭다운으로 구현
-			setting.addDropdown((dd) => {
-				dd.addOption('server', '서버(Server)');
-				dd.addOption('local', '로컬(Local)');
-				dd.addOption('skip', '건너뛰기(Skip)');
-				dd.setValue(this._resolutions.get(file.path) ?? 'server');
-				dd.onChange((v) => {
-					this._resolutions.set(file.path, v as 'server' | 'local' | 'skip');
+			new Setting(container)
+				.setName(folderLabel)
+				.setDesc(`${files.length}개 파일`)
+				.setHeading()
+				.addDropdown((dd) => {
+					dd.addOption('', '— 폴더 전체 설정 —');
+					dd.addOption('server', '모두 서버(Server)');
+					dd.addOption('local', '모두 로컬(Local)');
+					dd.addOption('skip', '모두 건너뛰기(Skip)');
+					dd.setValue('');
+					dd.onChange((v) => {
+						if (!v) return;
+						for (const f of files) {
+							this._resolutions.set(f.path, v as 'server' | 'local' | 'skip');
+						}
+						this._renderFileList(container);
+					});
 				});
-			});
+
+			for (const file of files) {
+				const fileName = file.path.substring(file.path.lastIndexOf('/') + 1) || file.path;
+				const setting = new Setting(container).setName(fileName);
+
+				setting.addDropdown((dd) => {
+					dd.addOption('server', '서버(Server)');
+					dd.addOption('local', '로컬(Local)');
+					dd.addOption('skip', '건너뛰기(Skip)');
+					dd.setValue(this._resolutions.get(file.path) ?? 'server');
+					dd.onChange((v) => {
+						this._resolutions.set(file.path, v as 'server' | 'local' | 'skip');
+					});
+				});
+			}
 		}
 	}
 
 	onClose(): void {
 		this.contentEl.empty();
+		this._resolve({
+			resolutions: new Map(),
+			skippedPaths: this._files.map((f) => f.path),
+		});
 	}
 }
 
