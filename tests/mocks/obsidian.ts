@@ -292,6 +292,7 @@ export class Setting {
 				return btnMock;
 			}),
 			buttonEl: {},
+			setTooltip: vi.fn().mockReturnThis(),
 		};
 		cb(btnMock);
 		return this;

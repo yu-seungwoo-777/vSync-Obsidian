@@ -57,7 +57,7 @@ vi.mock('obsidian', () => ({
 		addText(cb: (el: unknown) => void) { cb({ setPlaceholder: vi.fn().mockReturnThis(), setValue: vi.fn().mockReturnThis(), onChange: vi.fn().mockReturnThis(), inputEl: { value: '', type: 'text' } }); return this; }
 		addPassword(cb: (el: unknown) => void) { cb({ setPlaceholder: vi.fn().mockReturnThis(), setValue: vi.fn().mockReturnThis(), onChange: vi.fn().mockReturnThis(), inputEl: { value: '', type: 'password' } }); return this; }
 		addSlider(cb: (el: unknown) => void) { cb({ setLimits: vi.fn().mockReturnThis(), setValue: vi.fn().mockReturnThis(), setDynamicTooltip: vi.fn().mockReturnThis(), onChange: vi.fn().mockReturnThis(), sliderEl: { value: 30 } }); return this; }
-		addButton(cb: (el: unknown) => void) { cb({ setButtonText: vi.fn().mockReturnThis(), setCta: vi.fn().mockReturnThis(), onClick: vi.fn().mockReturnThis(), setDisabled: vi.fn().mockReturnThis(), buttonEl: { style: {} } }); return this; }
+		addButton(cb: (el: unknown) => void) { cb({ setButtonText: vi.fn().mockReturnThis(), setCta: vi.fn().mockReturnThis(), onClick: vi.fn().mockReturnThis(), setDisabled: vi.fn().mockReturnThis(), setTooltip: vi.fn().mockReturnThis(), buttonEl: { style: {} } }); return this; }
 		addToggle(cb: (el: unknown) => void) { cb({ setValue: vi.fn().mockReturnThis(), onChange: vi.fn().mockReturnThis() }); return this; }
 		addDropdown(cb: (el: unknown) => void) { cb({ addOption: vi.fn().mockReturnThis(), addOptions: vi.fn().mockReturnThis(), setValue: vi.fn().mockReturnThis(), onChange: vi.fn().mockReturnThis() }); return this; }
 		setDisabled() { return this; }

@@ -137,12 +137,13 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-001 onLayoutReady 래핑', () => {
 	});
 
 	it('설정이 구성된 경우 onLayoutReady 콜백 내에서 동기화를 시작해야 한다', async () => {
-		// onLayoutReady mock 설정: 콜백을 즉시 실행
-		const capturedCallbacks: Record<string, Function> = {};
+		// onLayoutReady mock 설정: 모든 콜백을 배열로 캡처
+		// (main.ts에서 onLayoutReady가 2번 호출됨: sync + update check)
+		const capturedCallbacks: Function[] = [];
 		(plugin.app as any).workspace = {
 			getLeavesOfType: vi.fn().mockReturnValue([]),
 			onLayoutReady: vi.fn((cb: Function) => {
-				capturedCallbacks['onLayoutReady'] = cb;
+				capturedCallbacks.push(cb);
 			}),
 		};
 
@@ -161,8 +162,8 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-001 onLayoutReady 래핑', () => {
 		// 아직 콜백이 실행되지 않았으므로 sync는 시작되지 않음
 		expect(mockSyncEngine.start).not.toHaveBeenCalled();
 
-		// 콜백 실행 (onLayoutReady 시뮬레이션)
-		await capturedCallbacks['onLayoutReady']();
+		// 첫 번째 콜백 실행 (sync 시작 콜백)
+		await capturedCallbacks[0]();
 
 		// 이제 sync가 시작되어야 함
 		expect(mockSyncEngine.start).toHaveBeenCalled();
@@ -204,11 +205,11 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-001 onLayoutReady 래핑', () => {
 	});
 
 	it('복원된 오프라인 큐도 onLayoutReady 이후에 flush해야 한다', async () => {
-		const capturedCallbacks: Record<string, Function> = {};
+		const capturedCallbacks: Function[] = [];
 		(plugin.app as any).workspace = {
 			getLeavesOfType: vi.fn().mockReturnValue([]),
 			onLayoutReady: vi.fn((cb: Function) => {
-				capturedCallbacks['onLayoutReady'] = cb;
+				capturedCallbacks.push(cb);
 			}),
 		};
 
@@ -232,8 +233,8 @@ describe('SPEC-OBSIDIAN-API-GAP-001: REQ-API-001 onLayoutReady 래핑', () => {
 		// onLayoutReady 전에는 flush가 호출되지 않아야 함
 		expect(mockSyncEngine.flushOfflineQueue).not.toHaveBeenCalled();
 
-		// 콜백 실행
-		await capturedCallbacks['onLayoutReady']();
+		// 첫 번째 콜백 실행 (sync 시작 콜백에 flush 로직 포함)
+		await capturedCallbacks[0]();
 
 		// 이제 flush가 호출되어야 함
 		expect(mockSyncEngine.flushOfflineQueue).toHaveBeenCalled();

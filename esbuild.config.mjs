@@ -11,36 +11,51 @@ if you want to view the source, please visit the github repository of this plugi
 const prod = process.argv[2] === "production";
 
 const context = await esbuild.context({
-	banner: { js: banner },
-	entryPoints: ["src/main.ts"],
-	bundle: true,
-	external: [
-		"obsidian",
-		"electron",
-		"@codemirror/autocomplete",
-		"@codemirror/collab",
-		"@codemirror/commands",
-		"@codemirror/language",
-		"@codemirror/lint",
-		"@codemirror/search",
-		"@codemirror/state",
-		"@codemirror/view",
-		"@lezer/common",
-		"@lezer/highlight",
-		"@lezer/lr",
-		...builtins,
-	],
-	format: "cjs",
-	target: "es2018",
-	logLevel: "info",
-	sourcemap: prod ? false : "inline",
-	treeShaking: true,
-	outfile: "main.js",
+  banner: { js: banner },
+  entryPoints: ["src/main.ts"],
+  bundle: true,
+  external: [
+    "obsidian",
+    "electron",
+    "@codemirror/autocomplete",
+    "@codemirror/collab",
+    "@codemirror/commands",
+    "@codemirror/language",
+    "@codemirror/lint",
+    "@codemirror/search",
+    "@codemirror/state",
+    "@codemirror/view",
+    "@lezer/common",
+    "@lezer/highlight",
+    "@lezer/lr",
+    ...builtins,
+  ],
+  // @MX:NOTE [REQ-CACHE-002] 프로덕션 빌드 시 minification 활성화
+  minify: prod,
+  format: "cjs",
+  target: "es2018",
+  logLevel: "info",
+  sourcemap: prod ? false : "inline",
+  treeShaking: true,
+  outfile: "main.js",
+  // @MX:NOTE [REQ-CACHE-002] 번들 분석을 위한 metafile 생성
+  metafile: prod,
 });
 
 if (prod) {
-	await context.rebuild();
-	process.exit(0);
+  await context.rebuild();
+  // @MX:NOTE [REQ-CACHE-002] 빌드 후 번들 크기 보고
+  const result = await context.rebuild();
+  const outputSize = result.metafile?.outputs["main.js"]?.bytes || 0;
+  const outputSizeMB = (outputSize / 1024 / 1024).toFixed(2);
+  console.log(`\n📦 번들 크기: ${outputSizeMB}MB (${outputSize} bytes)`);
+
+  // 번들 크기 경고 (550KB 초과 시)
+  if (outputSize > 550000) {
+    console.warn(`⚠️  경고: 번들 크기가 550KB를 초과합니다. 최적화를 고려하세요.`);
+  }
+
+  process.exit(0);
 } else {
-	await context.watch();
+  await context.watch();
 }

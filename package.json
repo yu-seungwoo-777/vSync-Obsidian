@@ -6,6 +6,7 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "node esbuild.config.mjs production",
+		"build:prod": "node esbuild.config.mjs production",
 		"pretest": "rm -f main.js",
 		"test": "vitest run",
 		"test:watch": "vitest",

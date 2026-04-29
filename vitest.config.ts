@@ -7,6 +7,8 @@ export default defineConfig({
 		exclude: ['node_modules/**', 'dist/**'],
 		environment: 'node',
 		globals: true,
+		pool: 'forks',
+		maxWorkers: 4,
 		coverage: {
 			provider: 'v8',
 			reporter: ['text', 'text-summary'],
