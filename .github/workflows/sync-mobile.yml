@@ -16,11 +16,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download Release Assets
-        uses: robinraju/release-downloader@v1.11
-        with:
-          tag: ${{ github.event.release.tag_name }}
-          fileName: 'main.js,manifest.json,styles.css'
-          out-file-path: 'assets'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          mkdir -p assets
+          gh release download ${{ github.event.release.tag_name }} \
+            --repo ${{ github.repository }} \
+            --dir assets \
+            -p 'main.js' -p 'manifest.json' -p 'styles.css'
 
       - name: Clone Mobile Repo
         uses: actions/checkout@v4
