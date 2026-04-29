@@ -35,33 +35,52 @@ jobs:
       - name: Sync artifacts and push
         run: |
           cd mobile-repo
-          cp ../assets/main.js .
-          cp ../assets/manifest.json .
-          cp ../assets/styles.css .
 
-          VERSION=$(node -p "require('./manifest.json').version")
+          PLUGIN_DIR=".obsidian/plugins/vsync"
+          mkdir -p "$PLUGIN_DIR"
+          cp ../assets/main.js "$PLUGIN_DIR/"
+          cp ../assets/manifest.json "$PLUGIN_DIR/"
+          cp ../assets/styles.css "$PLUGIN_DIR/"
+
+          rm -f main.js manifest.json styles.css
+
+          {
+            echo "# Obsidian 설정 (플러그인 제외)"
+            echo ".obsidian/*"
+            echo "!.obsidian/plugins/"
+            echo ".obsidian/plugins/*"
+            echo "!.obsidian/plugins/vsync/"
+          } > .gitignore
+
+          VERSION=$(node -p "require('./$PLUGIN_DIR/manifest.json').version")
 
           {
             echo "# vSync Mobile"
             echo ""
-            echo "Obsidian iOS/Android - Obsidian Git Plugin Install"
+            echo "Obsidian iOS/Android 플러그인 저장소"
             echo ""
-            echo "## Install (Obsidian Git Plugin)"
+            echo "## 설치 (Obsidian Git Plugin)"
             echo ""
-            echo "1. Install [Obsidian Git](https://obsidian.md/plugins?id=obsidian-git) plugin"
-            echo "2. Settings - Obsidian Git - Custom clone URL:"
+            echo "1. [Obsidian Git](https://obsidian.md/plugins?id=obsidian-git) 플러그인 설치"
+            echo "2. Obsidian Git 설정 - Custom clone URL:"
             echo '   ```'
             echo "   https://github.com/yu-seungwoo-777/vSync-Obsidian-Mobile.git"
             echo '   ```'
-            echo '3. Clone to: `.obsidian/plugins/vsync/`'
-            echo "4. Restart Obsidian"
-            echo "5. Enable vSync in Community Plugins"
+            echo '3. Obsidian Git으로 clone → `.obsidian/plugins/vsync/` 구조 자동 생성'
+            echo "4. Obsidian 재시동"
+            echo "5. 커뮤니티 플러그인에서 vSync 활성화"
             echo ""
-            echo "## Update"
+            echo "## 수동 설치"
             echo ""
-            echo "Pull via Obsidian Git plugin to get the latest version."
+            echo "1. Release에서 main.js, manifest.json, styles.css 다운로드"
+            echo '2. 볼트의 .obsidian/plugins/vsync/ 폴더에 복사'
+            echo "3. Obsidian 재시동 후 vSync 활성화"
             echo ""
-            echo "## Current Version"
+            echo "## 업데이트"
+            echo ""
+            echo "Obsidian Git에서 Pull로 최신 버전 적용"
+            echo ""
+            echo "## 현재 버전"
             echo ""
             echo "**${VERSION}**"
           } > README.md
