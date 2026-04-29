@@ -1,0 +1,70 @@
+name: Sync to Mobile Repo
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Download Release Assets
+        uses: robinraju/release-downloader@v1.11
+        with:
+          tag: ${{ github.event.release.tag_name }}
+          fileName: 'main.js,manifest.json,styles.css'
+          out-file-path: 'assets'
+
+      - name: Clone Mobile Repo
+        uses: actions/checkout@v4
+        with:
+          repository: yu-seungwoo-777/vSync-Obsidian-Mobile
+          token: ${{ secrets.MOBILE_REPO_TOKEN }}
+          path: mobile-repo
+
+      - name: Sync artifacts and push
+        run: |
+          cd mobile-repo
+          cp ../assets/main.js .
+          cp ../assets/manifest.json .
+          cp ../assets/styles.css .
+
+          VERSION=$(node -p "require('./manifest.json').version")
+
+          {
+            echo "# vSync Mobile"
+            echo ""
+            echo "Obsidian iOS/Android - Obsidian Git Plugin Install"
+            echo ""
+            echo "## Install (Obsidian Git Plugin)"
+            echo ""
+            echo "1. Install [Obsidian Git](https://obsidian.md/plugins?id=obsidian-git) plugin"
+            echo "2. Settings - Obsidian Git - Custom clone URL:"
+            echo '   ```'
+            echo "   https://github.com/yu-seungwoo-777/vSync-Obsidian-Mobile.git"
+            echo '   ```'
+            echo '3. Clone to: `.obsidian/plugins/vsync/`'
+            echo "4. Restart Obsidian"
+            echo "5. Enable vSync in Community Plugins"
+            echo ""
+            echo "## Update"
+            echo ""
+            echo "Pull via Obsidian Git plugin to get the latest version."
+            echo ""
+            echo "## Current Version"
+            echo ""
+            echo "**${VERSION}**"
+          } > README.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "release: v${VERSION}"
+          git push
