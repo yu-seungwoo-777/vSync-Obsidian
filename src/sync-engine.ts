@@ -1123,8 +1123,34 @@ export class SyncEngine {
 				serverFileMap.set(sf.path, sf.hash);
 			}
 
-			// 1. 로컬 파일 처리 (삭제된 경로는 제외)
+			// @MX:NOTE SPEC-SYNC-RENAME-FIX-001: 로컬 파일 해시를 먼저 수집하여 rename 감지
+			// 로컬에만 있고 서버에 없는 파일이 서버의 다른 파일과 같은 해시면 rename으로 처리
 			const localFiles = this._vault.getFiles();
+			const localHashByPath = new Map<string, string>(); // path → hash
+			for (const file of localFiles) {
+				if (!shouldSyncPath(file.path) || deletedPaths.has(file.path)) continue;
+				if (!isBinaryPath(file.path)) {
+					const c = await this._vault.readIfExists(file.path);
+					if (c !== null) {
+						localHashByPath.set(file.path, await computeHash(c));
+					}
+				}
+			}
+			// rename 맵 구축: localOnly 파일의 해시와 serverOnly 파일의 해시가 일치하면 rename
+			const localOnlyPaths = [...localHashByPath.keys()].filter(p => !serverFileMap.has(p));
+			const serverOnlyFiles = serverFiles.filter(sf => !localHashByPath.has(sf.path) && shouldSyncPath(sf.path) && !deletedPaths.has(sf.path));
+			const renamedLocalPaths = new Set<string>(); // rename으로 처리된 로컬 경로
+			const renamedServerPaths = new Set<string>(); // rename으로 처리된 서버 경로
+			for (const localPath of localOnlyPaths) {
+				const lh = localHashByPath.get(localPath)!;
+				const match = serverOnlyFiles.find(sf => sf.hash === lh && !renamedServerPaths.has(sf.path));
+				if (match) {
+					renamedLocalPaths.add(localPath);
+					renamedServerPaths.add(match.path);
+				}
+			}
+
+			// 1. 로컬 파일 처리 (삭제된 경로는 제외)
 			const localPathSet = new Set<string>();
 			for (const file of localFiles) {
 				// @MX:NOTE 삭제 이벤트로 이미 처리된 파일은 업로드 스킵
@@ -1132,6 +1158,10 @@ export class SyncEngine {
 
 				if (shouldSyncPath(file.path)) {
 					localPathSet.add(file.path);
+
+					// @MX:NOTE SPEC-SYNC-RENAME-FIX-001: rename으로 감지된 파일은 업로드 스킵
+					if (renamedLocalPaths.has(file.path)) continue;
+
 					if (isBinaryPath(file.path)) {
 						const data = await this._vault.readBinary(file.path);
 						await this._client.uploadAttachment(file.path, data);
@@ -1139,7 +1169,8 @@ export class SyncEngine {
 						// 텍스트 파일: 해시 비교 후 조건부 업로드
 						const content = await this._vault.readIfExists(file.path);
 						if (content !== null) {
-							const localHash = await computeHash(content);
+							// @MX:NOTE SPEC-SYNC-RENAME-FIX-001: 미리 계산된 해시 재사용
+							const localHash = localHashByPath.get(file.path) ?? (await computeHash(content));
 							const serverHash = serverFileMap.get(file.path);
 							if (serverHash === localHash) {
 								// 서버와 동일 → 업로드 스킵, 캐시만 업데이트
@@ -1158,11 +1189,40 @@ export class SyncEngine {
 				}
 			}
 
-			// 2. 서버에만 있는 파일 → 다운로드
+			// 2. 서버에만 있는 파일 → 다운로드 (rename 감지 포함)
 			for (const sf of serverFiles) {
 				if (localPathSet.has(sf.path)) continue;
 				if (deletedPaths.has(sf.path)) continue;
 				if (!shouldSyncPath(sf.path)) continue;
+
+				// @MX:NOTE SPEC-SYNC-RENAME-FIX-001: rename으로 감지된 서버 파일은
+				// 다운로드 대신 로컬 파일을 새 이름으로 rename
+				if (renamedServerPaths.has(sf.path)) {
+					const localOldPath = localOnlyPaths.find(p => localHashByPath.get(p) === sf.hash && renamedLocalPaths.has(p));
+					if (localOldPath) {
+						const oldContent = await this._vault.readIfExists(localOldPath);
+						if (oldContent !== null) {
+							this._recentlyModified.add(localOldPath);
+							this._recentlyModified.add(sf.path);
+							if (typeof this._vault.renameFile === 'function') {
+								await this._vault.renameFile(localOldPath, sf.path).catch(async () => {
+									await this._vault.write(sf.path, oldContent);
+									await this._vault.delete(localOldPath).catch(() => {});
+								});
+							} else {
+								await this._vault.write(sf.path, oldContent);
+								await this._vault.delete(localOldPath).catch(() => {});
+							}
+						this._hashCache.delete(localOldPath);
+						if (sf.hash) this._updateHashCache(sf.path, sf.hash);
+						setTimeout(() => {
+							this._recentlyModified.delete(localOldPath);
+							this._recentlyModified.delete(sf.path);
+						}, RECENTLY_MODIFIED_TTL_MS);
+						continue;
+						}
+					}
+				}
 
 				if (isBinaryPath(sf.path)) {
 					await this._downloadRemoteBinary(sf.path, sf.hash);
