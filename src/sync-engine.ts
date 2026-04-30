@@ -930,6 +930,8 @@ export class SyncEngine {
 
 					case 'compare-hash': {
 						// 양쪽에 모두 존재 → 해시 비교
+						// @MX:NOTE 초기 동기화에서 base가 없으므로 서버 해시를 baseHash로 전달하여
+						// 3-way merge가 정상 작동하도록 함 (REQ-SYNC-001)
 						const serverFile = serverFileMap.get(path);
 						if (!serverFile) break;
 
@@ -950,7 +952,11 @@ export class SyncEngine {
 							} else {
 								const localHash = await computeHash(localContent);
 								if (localHash !== serverFile.hash) {
-									await this._downloadRemoteFile(path, serverFile.hash);
+									// 서버 해시를 baseHash로 전달하여 rawUpload
+									const result = await this._client.rawUpload(path, localContent, serverFile.hash);
+									if ('conflict' in result && result.conflict === true) {
+										await this._handleUploadConflict(path, localContent, result);
+									}
 								}
 							}
 						}
