@@ -31,6 +31,19 @@ vi.mock('../../src/sync-engine', () => ({
 	}),
 }));
 
+vi.mock('../../src/api-client', async () => {
+	const actual = await vi.importActual('../../src/api-client');
+	return {
+		...actual,
+		checkPluginUpdate: vi.fn().mockResolvedValue({
+			hasUpdate: false,
+			currentVersion: '0.2.11',
+			latestVersion: '0.2.11',
+			files: [],
+		}),
+	};
+});
+
 // VSyncSettingTab mock
 vi.mock('../../src/settings', () => ({
 	VSyncSettingTab: vi.fn().mockImplementation(() => ({

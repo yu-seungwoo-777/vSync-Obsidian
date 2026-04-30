@@ -27,6 +27,7 @@ export default class VSyncPlugin extends Plugin {
 	private _syncEngine: SyncEngine | null = null;
 	private _workspaceAdapter: WorkspaceAdapter | null = null;
 	private _statusBarItem: { setText: (text: string) => void; setAttr: (attr: string, value: string) => void; _lastText?: string; hide?: () => void; show?: () => void } | null = null;
+	private _isOutdated = false;
 
 	// @MX:NOTE 충돌 큐 (SPEC-P6-UX-002 REQ-UX-003)
 	conflictQueue: ConflictQueue;
@@ -130,6 +131,14 @@ export default class VSyncPlugin extends Plugin {
 		// vault 로드 중 기존 파일의 create 이벤트가 트리거되는 것을 방지
 		if (this._isConfigured()) {
 			this._workspaceAdapter!.onLayoutReady(() => {
+				// 버전 체크를 첫 로직으로 수행 (비동기, 완료 전까지 동기화 대기)
+				this._checkForUpdates();
+
+				if (this._isOutdated) {
+					this.updateStatus('outdated');
+					return;
+				}
+
 				// 동기화 활성화 여부 확인 (sync_enabled이면 동기화 시작, 아니면 paused 상태)
 				if (this.settings.sync_enabled) {
 					this._startSync();
@@ -219,6 +228,7 @@ export default class VSyncPlugin extends Plugin {
 			paused: 'vSync: Paused',
 			error: `vSync: Error: ${message || 'Unknown'}`,
 			not_configured: 'vSync: Not configured',
+				outdated: 'vSync: Update required',
 		};
 
 		const text = statusTexts[status] || status;
@@ -484,6 +494,10 @@ export default class VSyncPlugin extends Plugin {
 
 	/** 연결 설정 적용 후 동기화 시작 (모달에서 호출) */
 	async connectAndSync(newSettings: Partial<VSyncSettings>): Promise<boolean> {
+		if (this._isOutdated) {
+			new Notice('vSync 업데이트가 필요합니다. 동기화를 시작하려면 먼저 업데이트하세요.');
+			return false;
+		}
 		Object.assign(this.settings, newSettings);
 		await this.saveSettings();
 
@@ -524,7 +538,13 @@ export default class VSyncPlugin extends Plugin {
 					this.manifest.version,
 				);
 				if (info.hasUpdate) {
-					new Notice(`vSync 업데이트 available: v${info.latestVersion} (현재: v${info.currentVersion})`);
+					this._isOutdated = true;
+					this._syncEngine?.destroy();
+					this._syncEngine = null;
+					this.updateStatus('outdated');
+					new Notice(`vSync 업데이트가 필요합니다: v${info.latestVersion} (현재: v${info.currentVersion}). 동기화가 비활성화됩니다.`, 15000);
+				} else {
+					this._isOutdated = false;
 				}
 			} catch {
 				// 업데이트 체크 실패는 조용히 무시
