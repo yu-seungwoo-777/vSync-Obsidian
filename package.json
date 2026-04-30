@@ -1,6 +1,6 @@
 {
 	"name": "@vsync/plugin",
-	"version": "0.2.8",
+	"version": "0.2.9",
 	"description": "vSync - Vector sync client plugin",
 	"main": "main.js",
 	"scripts": {
