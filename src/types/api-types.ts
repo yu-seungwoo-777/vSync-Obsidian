@@ -428,6 +428,8 @@ export interface components {
              * @enum {string}
              */
             merge_type?: "auto" | "normal";
+            /** @description REQ-SYNC-004: rename 리다이렉트 시 원본 경로 */
+            redirected_from?: string;
         };
         FileInfo: {
             /** Format: uuid */

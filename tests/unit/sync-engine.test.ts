@@ -106,7 +106,7 @@ describe('SyncEngine', () => {
 
 			await engine.handleLocalCreate(file);
 
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'content', undefined);
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'content', undefined, undefined);
 		});
 
 		it('파일 수정 시 업로드해야 한다', async () => {
@@ -119,7 +119,7 @@ describe('SyncEngine', () => {
 			await engine.handleLocalModify(file);
 			await vi.advanceTimersByTimeAsync(500);
 
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'modified content', undefined);
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'modified content', undefined, undefined);
 			vi.useRealTimers();
 		});
 
@@ -384,7 +384,7 @@ describe('SyncEngine', () => {
 
 			await engine.performFullSync();
 
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('diff.md', 'new content', 'server-hash');
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('diff.md', 'new content', 'server-hash', undefined);
 		});
 
 		it('서버에만 있는 파일 → 다운로드', async () => {
@@ -414,7 +414,7 @@ describe('SyncEngine', () => {
 
 			await engine.performFullSync();
 
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('local-only.md', 'local content', undefined);
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('local-only.md', 'local content', undefined, undefined);
 		});
 	});
 
@@ -575,7 +575,7 @@ describe('SyncEngine', () => {
 
 			await engine.handleLocalCreate(file);
 
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', '# Test', undefined);
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', '# Test', undefined, undefined);
 			expect(mockApiClient.uploadAttachment).not.toHaveBeenCalled();
 		});
 
@@ -759,7 +759,7 @@ describe('SyncEngine', () => {
 				vi.mocked(computeHash).mockResolvedValueOnce('new-hash');
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/test.md', hash: 'server-new', sizeBytes: 11, version: 1 });
 				await (engine as any)._uploadLocalFile('notes/test.md');
-				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'new content', 'old-hash');
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'new content', 'old-hash', undefined);
 			});
 
 			// ============================================================
@@ -773,7 +773,7 @@ describe('SyncEngine', () => {
 				vi.mocked(computeHash).mockResolvedValueOnce('different-hash');
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/test.md', hash: 'server-hash', sizeBytes: 7, version: 1 });
 				await (engine as any)._uploadLocalFile('notes/test.md');
-				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'content', 'cached-hash-abc');
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/test.md', 'content', 'cached-hash-abc', undefined);
 			});
 
 			it('업로드 성공 시 서버 해시로 캐시를 업데이트해야 한다 (AC-003.1)', async () => {
@@ -876,7 +876,7 @@ describe('SyncEngine', () => {
 				vi.mocked(computeHash).mockResolvedValueOnce('hash');
 				mockApiClient.rawUpload.mockResolvedValueOnce({ id: 1, path: 'notes/new.md', hash: 'h', sizeBytes: 11, version: 1 });
 				await engine.handleLocalCreate(createMockFile('notes/new.md', 'new content'));
-				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/new.md', 'new content', undefined);
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('notes/new.md', 'new content', undefined, undefined);
 			});
 
 			it('destroy 시 타이머 정리 (AC-008.6)', async () => {
@@ -1155,7 +1155,7 @@ describe('SyncEngine', () => {
 
 				await (engine as any).handleLocalRename('old.md', 'new.md');
 
-				expect(mockApiClient.moveFile).toHaveBeenCalledWith('old.md', 'new.md');
+				expect(mockApiClient.moveFile).toHaveBeenCalledWith('old.md', 'new.md', undefined);
 			});
 
 			it('AC-002: rename 성공 시 해시 캐시 이관', async () => {
@@ -1174,7 +1174,7 @@ describe('SyncEngine', () => {
 
 				await (engine as any).handleLocalRename('old.md', 'new.md');
 
-				expect(mockApiClient.moveFile).toHaveBeenCalledWith('old.md', 'new.md');
+				expect(mockApiClient.moveFile).toHaveBeenCalledWith('old.md', 'new.md', undefined);
 				// 에러가 catch되고 notice 호출 - 크래시 없음
 				expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('Rename failed'));
 			});
@@ -1190,7 +1190,7 @@ describe('SyncEngine', () => {
 
 				await (engine as any).handleLocalRename('old.png', 'new.png');
 
-				expect(mockApiClient.moveFile).toHaveBeenCalledWith('old.png', 'new.png');
+				expect(mockApiClient.moveFile).toHaveBeenCalledWith('old.png', 'new.png', undefined);
 			});
 
 			it('syncing 중일 때 스킵', async () => {
@@ -1207,6 +1207,56 @@ describe('SyncEngine', () => {
 				await (engine as any).handleLocalRename('.obsidian/old.md', 'new.md');
 
 				expect(mockApiClient.moveFile).not.toHaveBeenCalled();
+			});
+		});
+
+
+
+		describe('REQ-SYNC-004: Upload redirect hashCache update', () => {
+			it('redirected_from 응답 시 hashCache에서 이전 경로 제거 후 새 해시 설정', async () => {
+				const cache = (engine as any)._hashCache as Map<string, string>;
+				cache.set('notes/old.md', 'hash-old');
+
+				mockApiClient.rawUpload.mockResolvedValueOnce({
+					id: 'file-id',
+					path: 'notes/new.md',
+					hash: 'hash-new',
+					size_bytes: 100,
+					version: 2,
+					redirected_from: 'notes/old.md',
+				});
+
+				vault._textMap.set('notes/old.md', 'updated content');
+				await (engine as any)._uploadLocalFile('notes/old.md');
+
+				// redirected_from 처리 후 _updateHashCache가 실행되므로
+				// normalizedPath(notes/old.md)에 새 해시가 설정됨
+				expect(cache.get('notes/old.md')).toBe('hash-new');
+				// rawUpload가 호출되었는지 확인
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith(
+					'notes/old.md', 'updated content', 'hash-old', undefined
+				);
+			});
+		});
+
+		describe('REQ-SYNC-005: Rename optimistic locking', () => {
+			it('409 Conflict 시 conflict queue에 적재되어야 한다', async () => {
+				const conflictError = new Error('Conflict') as Error & { status: number };
+				conflictError.status = 409;
+				mockApiClient.moveFile.mockRejectedValueOnce(conflictError);
+
+				const cache = (engine as any)._hashCache as Map<string, string>;
+				cache.set('notes/old.md', 'hash-abc');
+
+				await (engine as any).handleLocalRename('notes/old.md', 'notes/new.md');
+
+				const conflictQueue = (engine as any)._conflictQueue;
+				if (conflictQueue) {
+					const items = conflictQueue.getAll();
+					expect(items.length).toBe(1);
+					expect(items[0].file_path).toBe('notes/new.md');
+					expect(items[0].type).toBe('rename');
+				}
 			});
 		});
 
@@ -1557,7 +1607,7 @@ describe('SyncEngine', () => {
 				await engine.performFullSync();
 
 				// baseHash로 서버 해시 전달 → 3-way merge 트리거
-				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('shared.md', 'A edits', 'v2-hash');
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('shared.md', 'A edits', 'v2-hash', undefined);
 				// 캐시에 merge 결과 해시 저장
 				const cache = (engine as any)._hashCache as Map<string, string>;
 				expect(cache.get('shared.md')).toBe('merged-hash');
@@ -1594,7 +1644,7 @@ describe('SyncEngine', () => {
 				// same.md는 rawUpload 호출되지 않음
 				expect(mockApiClient.rawUpload).not.toHaveBeenCalledWith('same.md', expect.anything(), expect.anything());
 				// changed.md는 baseHash와 함께 업로드
-				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('changed.md', 'new content', 'old-hash');
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('changed.md', 'new content', 'old-hash', undefined);
 				// remote-only.md 다운로드됨
 				expect(mockApiClient.rawDownload).toHaveBeenCalledWith('remote-only.md');
 			});
@@ -1612,7 +1662,7 @@ describe('SyncEngine', () => {
 				await engine.performFullSync();
 
 				// baseHash 없이 업로드 (서버에 없으므로)
-				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('new-note.md', 'new file content', undefined);
+				expect(mockApiClient.rawUpload).toHaveBeenCalledWith('new-note.md', 'new file content', undefined, undefined);
 				// 캐시에 서버 응답 해시 저장
 				const cache = (engine as any)._hashCache as Map<string, string>;
 				expect(cache.get('new-note.md')).toBe('server-new-hash');

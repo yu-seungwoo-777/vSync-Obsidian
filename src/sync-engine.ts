@@ -60,6 +60,8 @@ export class SyncEngine {
 
 	// @MX:NOTE Hash-based upload deduplication
 	private _hashCache: Map<string, string>;
+	// @MX:NOTE REQ-SYNC-007: version cache — hashCache 유실 시 버전 번호로 base 폴백
+	private _versionCache: Map<string, number> = new Map();
 	private _skippedPathsSet = new Set<string>();
 	private _pendingUploads: Map<string, ReturnType<typeof setTimeout>> = new Map();
 	private _onCacheUpdate: ((cache: Map<string, string>) => void) | null = null;
@@ -316,6 +318,7 @@ export class SyncEngine {
 	}
 
 	/** 로컬 파일 리네임 이벤트 처리 */
+	// @MX:NOTE REQ-SYNC-005: expectedPath 전달 및 409 시 conflict queue 적재
 	async handleLocalRename(oldPath: string, newPath: string): Promise<void> {
 		if (this._destroyed || this._paused) return;
 		const normalizedNewPath = normalizePath(newPath);
@@ -325,7 +328,10 @@ export class SyncEngine {
 		if (!shouldSyncPath(normalizedOldPath)) return;
 
 		try {
-			await this._client.moveFile(oldPath, newPath);
+			// @MX:NOTE REQ-SYNC-005: 해시 캐시의 현재 경로를 expected_path로 전달
+			const cachedHash = this._hashCache.get(normalizedOldPath);
+			const expectedPath = cachedHash ? oldPath : undefined;
+			await this._client.moveFile(oldPath, newPath, expectedPath);
 			// 해시 캐시 이관
 			const oldHash = this._hashCache.get(normalizedOldPath);
 			if (oldHash) {
@@ -333,6 +339,24 @@ export class SyncEngine {
 				this._updateHashCache(normalizedNewPath, oldHash);
 			}
 		} catch (error) {
+			// @MX:NOTE REQ-SYNC-005: 409 Conflict 시 conflict queue에 적재
+			const err = error as { status?: number; message?: string };
+			if (err.status === 409 && this._conflictQueue) {
+				this._conflictQueue.enqueue({
+					id: globalThis.crypto?.randomUUID?.() ?? `rename-conflict-${Date.now()}`,
+					file_path: newPath,
+					local_content: '',
+					server_content: '',
+					diff: null,
+					base_hash: null,
+					conflict_id: undefined,
+					type: 'rename',
+					timestamp: Date.now(),
+					source: 'upload',
+				});
+				this._noticeFn(`Rename conflict detected: ${oldPath} → ${newPath}`);
+				return;
+			}
 			this._noticeFn(`Rename failed: ${(error as Error).message}`);
 			// Graceful degradation: Obsidian에서 delete+create 이벤트도 발생하므로
 			// 기존 handleLocalDelete + handleLocalCreate 흐름으로 폴백
@@ -411,7 +435,9 @@ export class SyncEngine {
 
 				// 업로드 실행 (AC-002.3)
 				// @MX:NOTE 캐시된 해시를 baseHash로 전달하여 3-way merge 트리거
-				const result = await this._client.rawUpload(normalizedPath, content, cachedHash);
+				// @MX:NOTE REQ-SYNC-007: versionCache에서 baseVersion 전달
+				const cachedVersion = this._versionCache.get(normalizedPath);
+				const result = await this._client.rawUpload(normalizedPath, content, cachedHash, cachedVersion);
 
 				// @MX:NOTE 409 Conflict 응답 시 충돌 큐에 적재
 				if ('conflict' in result && result.conflict === true) {
@@ -419,8 +445,20 @@ export class SyncEngine {
 					return;
 				}
 
+				// @MX:NOTE REQ-SYNC-004: rename 리다이렉트 시 hashCache 이관
+				const uploadResult = result as import('./types').UploadResult;
+				if (uploadResult.redirected_from) {
+					const oldNormalizedPath = normalizePath(uploadResult.redirected_from);
+					this._hashCache.delete(oldNormalizedPath);
+					this._versionCache.delete(oldNormalizedPath);
+				}
+
 				// 캐시 업데이트 (AC-003.1, AC-003.2)
-				this._updateHashCache(normalizedPath, (result as import('./types').UploadResult).hash);
+				this._updateHashCache(normalizedPath, uploadResult.hash);
+				// @MX:NOTE REQ-SYNC-007: 버전 캐시 업데이트
+				if (uploadResult.version) {
+					this._versionCache.set(normalizedPath, uploadResult.version);
+				}
 			}
 		} catch (error) {
 			// 업로드 실패 시 캐시 업데이트하지 않음 (AC-003.4)
@@ -580,9 +618,11 @@ export class SyncEngine {
 
 			if (events.length === 0) return;
 
+			// @MX:NOTE REQ-SYNC-003: 모든 이벤트를 큐에 먼저 적재 후 한 번에 드레인
 			for (const event of events) {
-				await this._enqueueEvent(event);
+				this._eventQueue.push(event);
 			}
+			await this._drainQueue();
 		} catch (error) {
 			this._noticeFn(`Polling failed: ${(error as Error).message}`);
 		} finally {
@@ -984,7 +1024,10 @@ export class SyncEngine {
 				await this._processEvent(event);
 				this._lastEventId = event.id;
 				this._addProcessedId(event.id);
-				await this._client.updateSyncStatus(event.id);
+			}
+			// @MX:NOTE REQ-SYNC-003: updateSyncStatus는 드레인 완료 후 1회만 호출
+			if (this._lastEventId) {
+				await this._client.updateSyncStatus(this._lastEventId);
 			}
 		} finally {
 			this._isProcessing = false;
@@ -1075,6 +1118,7 @@ export class SyncEngine {
 
 		// AC-007.2: 인메모리 캐시 초기화
 		this._hashCache.clear();
+		this._versionCache.clear();
 	}
 
 	// ============================================================
@@ -1109,6 +1153,7 @@ export class SyncEngine {
 
 			// AC-005.1: 캐시 초기화 후 재구축
 			this._hashCache.clear();
+			this._versionCache.clear();
 			/// @MX:NOTE 큐 flush를 전체 동기화 전에 수행
 			await this.flushOfflineQueue();
 
@@ -1176,13 +1221,19 @@ export class SyncEngine {
 								// 서버와 동일 → 업로드 스킵, 캐시만 업데이트
 								this._updateHashCache(file.path, serverHash);
 							} else {
-								// 서버와 다르거나 서버에 없음 → baseHash와 함께 업로드
-								const result = await this._client.rawUpload(file.path, content, serverHash);
-								if ('conflict' in result && result.conflict === true) {
-									await this._handleUploadConflict(file.path, content, result);
-								} else {
-									this._updateHashCache(file.path, (result as import('./types').UploadResult).hash);
+							// 서버와 다르거나 서버에 없음 → baseHash와 함께 업로드
+							// @MX:NOTE REQ-SYNC-007: 버전 캐시에서 baseVersion 전달
+							const cachedVersion = this._versionCache.get(file.path);
+							const result = await this._client.rawUpload(file.path, content, serverHash, cachedVersion);
+							if ('conflict' in result && result.conflict === true) {
+								await this._handleUploadConflict(file.path, content, result);
+							} else {
+								this._updateHashCache(file.path, (result as import('./types').UploadResult).hash);
+								// @MX:NOTE REQ-SYNC-007: 버전 캐시 업데이트
+								if ((result as import('./types').UploadResult).version) {
+									this._versionCache.set(file.path, (result as import('./types').UploadResult).version);
 								}
+							}
 							}
 						}
 					}

@@ -202,10 +202,10 @@ describe('performFullSync — Event-first processing (SPEC-SYNC-DELETE-001 T4)',
 		);
 		// a.md와 c.md는 baseHash와 함께 정상 업로드됨
 		expect(mockApiClient.rawUpload).toHaveBeenCalledWith(
-			'notes/a.md', 'content-a', 'hash-a'
+			'notes/a.md', 'content-a', 'hash-a', undefined
 		);
 		expect(mockApiClient.rawUpload).toHaveBeenCalledWith(
-			'notes/c.md', 'content-c', 'hash-c'
+			'notes/c.md', 'content-c', 'hash-c', undefined
 		);
 		// 총 2회 업로드 (a, c만)
 		expect(mockApiClient.rawUpload).toHaveBeenCalledTimes(2);

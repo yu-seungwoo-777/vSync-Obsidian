@@ -324,13 +324,18 @@ export class VSyncClient {
 
 	/** 파일 업로드 - PUT /v1/vault/{id}/raw/{path} */
 	// @MX:NOTE 409 시 ConflictResult 반환, 나머지 에러는 throw (REQ-UX-002)
-	async rawUpload(path: string, content: string, baseHash?: string): Promise<UploadResult | ConflictResult> {
+	// @MX:NOTE REQ-SYNC-007: baseVersion 파라미터 추가 — hashCache 유실 시 버전 번호로 base 폴백
+	async rawUpload(path: string, content: string, baseHash?: string, baseVersion?: number): Promise<UploadResult | ConflictResult> {
 		const url = buildApiUrl(this._baseUrl, this._vaultId, 'raw', encodeURIComponent(path));
 
 		// @MX:NOTE baseHash 있으면 X-Base-Hash 헤더 추가 (3-way merge 트리거)
+		// @MX:NOTE REQ-SYNC-007: baseVersion 있으면 X-Base-Version 헤더 추가
 		const headers = { ...this._getAuthAndDeviceHeaders() };
 		if (baseHash) {
 			headers['X-Base-Hash'] = baseHash;
+		}
+		if (baseVersion !== undefined && baseVersion > 0) {
+			headers['X-Base-Version'] = String(baseVersion);
 		}
 
 		try {
@@ -563,14 +568,14 @@ export class VSyncClient {
 	}
 
 	/** 파일 이동 - POST /v1/vault/{id}/move (REQ-PA-004) */
-	async moveFile(from: string, to: string): Promise<MoveResult> {
+	async moveFile(from: string, to: string, expectedPath?: string): Promise<MoveResult> {
 		const url = buildApiUrl(this._baseUrl, this._vaultId, 'move');
 		const response = await requestUrl({
 			url,
 			method: 'POST',
 			headers: this._getAuthAndDeviceHeaders(),
 			contentType: 'application/json',
-			body: JSON.stringify({ from, to }),
+			body: JSON.stringify({ from, to, ...(expectedPath ? { expected_path: expectedPath } : {}) }),
 		});
 		return response.json as MoveResult;
 	}
