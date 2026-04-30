@@ -166,23 +166,19 @@ export class ConnectModal extends Modal {
 					el.style.padding = '4px 0 8px 0';
 				}
 
-				// ── 하단 버튼: 연결 또는 연결 해제 중 하나만 ──
-				if (this._wasConnected) {
-					new Setting(contentEl)
-						.addButton((btn) =>
-							btn
-								.setButtonText('연결 해제')
-								.onClick(() => this._handleDisconnect()),
-						);
-				} else {
-					new Setting(contentEl)
-						.addButton((btn) =>
-							btn
-								.setButtonText('연결')
-								.setCta()
-								.onClick(() => this._handleConnect()),
-						);
-				}
+				// ── 하단 버튼: 연결 + 연결 해제 항상 표시 ──
+				new Setting(contentEl)
+					.addButton((btn) =>
+						btn
+							.setButtonText('연결')
+							.setCta()
+							.onClick(() => this._handleConnect()),
+					)
+					.addButton((btn) =>
+						btn
+							.setButtonText('연결 해제')
+							.onClick(() => this._handleDisconnect()),
+					);
 			}
 		}
 	}
