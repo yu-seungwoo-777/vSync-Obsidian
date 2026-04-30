@@ -27,14 +27,14 @@ export class ConnectModal extends Modal {
 	private _isLoggingIn = false;
 	private _testResult: { success: boolean; message: string } | null = null;
 
-	// UI 참조 (로그인 버튼 상태 직접 제어용)
+	// UI 참조 (값 직접 읽기용)
+	private _serverUrlInput: HTMLInputElement | null = null;
+	private _usernameInput: HTMLInputElement | null = null;
+	private _passwordInput: HTMLInputElement | null = null;
 	private _loginBtn: HTMLButtonElement | null = null;
 
-	/** 입력값 (모달 내 임시) */
+	/** 디바이스 ID */
 	private _deviceId = "";
-	private _serverUrl = '';
-	private _username = '';
-	private _password = '';
 
 	constructor(
 		app: any, // eslint-disable-line @typescript-eslint/no-explicit-any
@@ -47,11 +47,6 @@ export class ConnectModal extends Modal {
 		this._deviceId = settings.device_id;
 		this._onConnect = onConnect;
 		this._onDisconnect = onDisconnect;
-
-		// 기존 설정으로 초기화
-		this._serverUrl = settings.server_url;
-		this._username = settings.username;
-		this._password = settings.password;
 		this._selectedVaultId = settings.vault_id;
 	}
 
@@ -65,34 +60,45 @@ export class ConnectModal extends Modal {
 		}
 	}
 
+	/** 입력값을 DOM에서 직접 읽기 (onChange 누락 방지) */
+	private _readInputs(): { serverUrl: string; username: string; password: string } {
+		return {
+			serverUrl: (this._serverUrlInput?.value ?? this._settings.server_url ?? '').replace(/\/+$/, ''),
+			username: this._usernameInput?.value ?? this._settings.username ?? '',
+			password: this._passwordInput?.value ?? '',
+		};
+	}
+
 	private _render(): void {
 		const { contentEl } = this;
 		contentEl.empty();
+
+		const prev = this._readInputs();
 
 		// ── 서버 URL ──
 		new Setting(contentEl)
 			.setName('서버 URL')
 			.setDesc('vSync 서버 주소 (예: http://localhost:3000)')
-			.addText((text) =>
+			.addText((text) => {
 				text
 					.setPlaceholder('http://localhost:3000')
-					.setValue(this._serverUrl)
+					.setValue(prev.serverUrl)
 					.onChange((v) => {
-						this._serverUrl = v.replace(/\/+$/, '');
-					}),
-			);
+						// noop — 값은 _readInputs()에서 직접 읽음
+					});
+				this._serverUrlInput = text.inputEl;
+			});
 
 		// ── 사용자명 ──
 		new Setting(contentEl)
 			.setName('사용자명')
-			.addText((text) =>
+			.addText((text) => {
 				text
 					.setPlaceholder('username')
-					.setValue(this._username)
-					.onChange((v) => {
-						this._username = v;
-					}),
-			);
+					.setValue(prev.username)
+					.onChange(() => {});
+				this._usernameInput = text.inputEl;
+			});
 
 		// ── 비밀번호 ──
 		new Setting(contentEl)
@@ -100,11 +106,10 @@ export class ConnectModal extends Modal {
 			.addText((text) => {
 				text
 					.setPlaceholder('password')
-					.setValue(this._password)
-					.onChange((v) => {
-						this._password = v;
-					});
+					.setValue(prev.password)
+					.onChange(() => {});
 				text.inputEl.type = 'password';
+				this._passwordInput = text.inputEl;
 			});
 
 		// ── 로그인 버튼 ──
@@ -209,11 +214,11 @@ export class ConnectModal extends Modal {
 
 		try {
 			const vaults = await fetchVaults(
-				this._serverUrl,
+				this._settings.server_url,
 				this._settings.session_token,
 			);
 			this._vaults = vaults;
-			this._loginResult = { token: this._settings.session_token, user: { id: '', username: this._username, role: '' }, vaults };
+			this._loginResult = { token: this._settings.session_token, user: { id: '', username: this._settings.username ?? '', role: '' }, vaults };
 			this._loginError = '';
 		} catch {
 			this._vaults = [];
@@ -225,7 +230,9 @@ export class ConnectModal extends Modal {
 
 	/** 로그인 */
 	private async _handleLogin(): Promise<void> {
-		if (!this._serverUrl || !this._username || !this._password) {
+		const { serverUrl, username, password } = this._readInputs();
+
+		if (!serverUrl || !username || !password) {
 			this._loginError = '서버 URL, 사용자명, 비밀번호를 모두 입력하세요';
 			this._render();
 			return;
@@ -240,7 +247,7 @@ export class ConnectModal extends Modal {
 		this._setLoginLoading(true);
 
 		try {
-			const result = await login(this._serverUrl, this._username, this._password, this._settings.device_id);
+			const result = await login(serverUrl, username, password, this._deviceId);
 			this._loginResult = result;
 			this._vaults = result.vaults;
 
@@ -273,7 +280,8 @@ export class ConnectModal extends Modal {
 		this._render();
 
 		try {
-			const url = `${this._serverUrl}/v1/vault/${this._selectedVaultId}/files`;
+			const { serverUrl } = this._readInputs();
+			const url = `${serverUrl}/v1/vault/${this._selectedVaultId}/files`;
 			const resp = await requestUrl({
 				url,
 				method: 'GET',
@@ -311,9 +319,11 @@ export class ConnectModal extends Modal {
 			return;
 		}
 
+		const { serverUrl, username } = this._readInputs();
+
 		const newSettings: Partial<VSyncSettings> = {
-			server_url: this._serverUrl,
-			username: this._username,
+			server_url: serverUrl,
+			username,
 			password: '', // REQ-004: 평문 비밀번호 저장 방지
 			session_token: this._loginResult.token,
 			vault_id: this._selectedVaultId,
