@@ -1511,6 +1511,7 @@ export class SyncEngine {
 		uploadsToSync: string[];
 		conflictResolutions: Map<string, 'server' | 'local' | 'skip'>;
 		allSkippedPaths: string[];
+		conflictServerHashes?: Map<string, string>;
 	}): Promise<void> {
 		for (const path of plan.downloadsToSync) {
 			try { await this._downloadRemoteFile(path); } catch { this._noticeFn(`Download failed: ${path}`); }
@@ -1523,7 +1524,21 @@ export class SyncEngine {
 				if (resolution === 'server') {
 					await this._downloadRemoteFile(path);
 				} else if (resolution === 'local') {
-					await this._uploadLocalFile(path);
+					// @MX:NOTE 충돌 해결에서 로컬 선택 시 서버 해시를 baseHash로 전달 (REQ-SYNC-001)
+					const serverHash = plan.conflictServerHashes?.get(path);
+					if (serverHash) {
+						const content = await this._vault.readIfExists(path);
+						if (content !== null) {
+							const result = await this._client.rawUpload(path, content, serverHash);
+							if ('conflict' in result && result.conflict === true) {
+								await this._handleUploadConflict(path, content, result);
+							} else {
+								this._updateHashCache(path, (result as import('./types').UploadResult).hash);
+							}
+						}
+					} else {
+						await this._uploadLocalFile(path);
+					}
 				}
 			} catch { this._noticeFn(`Conflict resolution failed: ${path}`); }
 		}

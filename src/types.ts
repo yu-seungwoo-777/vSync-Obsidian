@@ -202,6 +202,8 @@ export interface SyncPlan {
 	uploadsToSync: string[];
 	conflictResolutions: Map<string, 'server' | 'local' | 'skip'>;
 	allSkippedPaths: string[];
+	/** 충돌 파일의 서버 해시 (baseHash로 전달용, REQ-SYNC-001) */
+	conflictServerHashes?: Map<string, string>;
 }
 
 export interface DownloadPlan {

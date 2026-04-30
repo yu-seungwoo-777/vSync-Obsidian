@@ -427,11 +427,17 @@ export default class VSyncPlugin extends Plugin {
 			// Step 3: 충돌 (REQ-IS-005)
 			if (classification.user.conflicts.length > 0) {
 				const cfPlan = await showConflictModal(this.app, classification.user.conflicts);
+				// @MX:NOTE 충돌 파일의 서버 해시를 baseHash로 전달 (REQ-SYNC-001)
+				const conflictServerHashes = new Map<string, string>();
+				for (const cf of classification.user.conflicts) {
+					conflictServerHashes.set(cf.path, cf.serverHash);
+				}
 				await this._syncEngine.executeSyncPlan({
 					downloadsToSync: [],
 					uploadsToSync: [],
 					conflictResolutions: cfPlan.resolutions,
 					allSkippedPaths: cfPlan.skippedPaths,
+					conflictServerHashes,
 				});
 			}
 
