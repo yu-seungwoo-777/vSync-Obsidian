@@ -89,15 +89,6 @@ describe('VSyncPlugin', () => {
 			expect(plugin.addStatusBarItem).toHaveBeenCalled();
 		});
 
-		it('수동 동기화 명령을 등록해야 한다 (REQ-P4-019)', async () => {
-			await plugin.onload();
-			expect(plugin.addCommand).toHaveBeenCalledWith(
-				expect.objectContaining({
-					id: 'vsync-force-sync',
-					name: expect.stringContaining('Force sync'),
-				})
-			);
-		});
 
 		it('동기화 상태 보기 명령을 등록해야 한다 (REQ-P4-020)', async () => {
 			await plugin.onload();
@@ -199,38 +190,6 @@ describe('VSyncPlugin', () => {
 		});
 	});
 
-	describe('force sync command', () => {
-		it('수동 동기화 성공 시 idle 상태로 전환해야 한다', async () => {
-			await plugin.onload();
-
-			const forceSyncCommand = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-				(call: any[]) => call[0].id === 'vsync-force-sync'
-			);
-			expect(forceSyncCommand).toBeDefined();
-
-			mockSyncEngine.performFullSync.mockResolvedValue(undefined);
-			await forceSyncCommand![0].callback();
-
-			const statusBarItem = plugin.getStatusBarItem();
-			expect(statusBarItem._lastText).toContain('Synced');
-		});
-
-		it('수동 동기화 실패 시 error 상태로 전환해야 한다', async () => {
-			await plugin.onload();
-
-			const forceSyncCommand = (plugin.addCommand as ReturnType<typeof vi.fn>).mock.calls.find(
-				(call: any[]) => call[0].id === 'vsync-force-sync'
-			);
-			expect(forceSyncCommand).toBeDefined();
-
-			mockSyncEngine.performFullSync.mockRejectedValue(new Error('Network error'));
-			await forceSyncCommand![0].callback();
-
-			const statusBarItem = plugin.getStatusBarItem();
-			expect(statusBarItem._lastText).toContain('Error');
-			expect(statusBarItem._lastText).toContain('Network error');
-		});
-	});
 
 	describe('show status command', () => {
 		it('동기화 상태를 Notice로 표시해야 한다', async () => {

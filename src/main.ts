@@ -545,21 +545,6 @@ export default class VSyncPlugin extends Plugin {
 
 		/** 명령 등록 */
 	private _registerCommands() {
-		// REQ-P4-019: 수동 동기화 명령
-		this.addCommand({
-			id: 'vsync-force-sync',
-			name: 'Force sync',
-			callback: async () => {
-				if (!this._syncEngine) return;
-				this.updateStatus('syncing');
-				try {
-					await this._syncEngine.performFullSync();
-					this.updateStatus('idle');
-				} catch (error) {
-					this.updateStatus('error', (error as Error).message);
-				}
-			},
-		});
 
 		// REQ-P4-020: 동기화 상태 보기
 		this.addCommand({
