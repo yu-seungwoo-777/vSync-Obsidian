@@ -271,7 +271,7 @@ describe('SyncEngine', () => {
 			expect(mockApiClient.rawUpload).toHaveBeenCalledTimes(2);
 		});
 
-		it('양쪽에 모두 있는 파일은 해시 비교 후 필요 시 다운로드해야 한다', async () => {
+		it('양쪽에 모두 있는 파일은 해시 비교 후 서버 해시를 baseHash로 rawUpload해야 한다', async () => {
 			// 서버: a.md (hash: server-hash)
 			// 로컬: a.md (hash: local-hash, 다름)
 			mockApiClient.listFiles.mockResolvedValueOnce([
@@ -279,13 +279,13 @@ describe('SyncEngine', () => {
 			]);
 			vault._textMap.set('a.md', 'local content');
 			vault.getFiles.mockReturnValueOnce([createMockFile('a.md', 'local content')]);
-			// computeHash mock이 'mock-hash'를 반환하므로 'server-hash'와 다름 → 충돌/다운로드
-			mockApiClient.rawDownload.mockResolvedValue('server content');
+			// computeHash mock이 'mock-hash'를 반환하므로 'server-hash'와 다름 → rawUpload with baseHash
+			mockApiClient.rawUpload.mockResolvedValue({ id: 1, path: 'a.md', hash: 'new-hash', sizeBytes: 0, version: 1 });
 
 			await engine.performInitialSync();
 
-			// 해시가 다르므로 다운로드 (또는 충돌 파일 생성)
-			expect(mockApiClient.rawDownload).toHaveBeenCalledWith('a.md');
+			// 해시가 다르므로 서버 해시를 baseHash로 rawUpload
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('a.md', 'local content', 'server-hash');
 		});
 
 		it('.obsidian/ 파일은 초기 동기화에서 제외해야 한다', async () => {
