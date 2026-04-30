@@ -24,6 +24,7 @@ export class ConnectModal extends Modal {
 	private _selectedVaultId = '';
 	private _vaults: VaultInfo[] = [];
 	private _isTesting = false;
+		private _isLoggingIn = false;
 	private _testResult: { success: boolean; message: string } | null = null;
 
 	/** 입력값 (모달 내 임시) */
@@ -112,7 +113,8 @@ export class ConnectModal extends Modal {
 		new Setting(contentEl)
 			.addButton((btn) =>
 				btn
-					.setButtonText('로그인')
+					.setButtonText(this._isLoggingIn ? '로그인 중...' : '로그인')
+					.setDisabled(this._isLoggingIn)
 					.setCta()
 					.onClick(() => this._handleLogin()),
 			);
@@ -124,8 +126,14 @@ export class ConnectModal extends Modal {
 			errEl.style.padding = '4px 0 8px 0';
 		}
 
-		// ── 로그인 성공 시: 볼트 선택 ──
-		if (this._vaults.length > 0) {
+		// ── 로그인 성공 시 ──
+		if (this._loginResult && this._vaults.length === 0) {
+			const noVaultEl = contentEl.createDiv({
+				text: '로그인 성공! 하지만 생성된 볼트가 없습니다. 먼저 서버에서 볼트를 생성하세요.',
+			});
+			noVaultEl.style.color = 'var(--text-warning)';
+			noVaultEl.style.padding = '8px 0';
+		} else if (this._vaults.length > 0) {
 			contentEl.createEl('h3', { text: '볼트 선택' });
 
 			const vaultOptions: Record<string, string> = {};
@@ -216,6 +224,7 @@ export class ConnectModal extends Modal {
 		this._vaults = [];
 		this._selectedVaultId = '';
 		this._testResult = null;
+		this._isLoggingIn = true;
 		this._render();
 
 		try {
@@ -227,7 +236,6 @@ export class ConnectModal extends Modal {
 				this._selectedVaultId = result.vaults[0].id;
 			}
 
-			this._render();
 		} catch (error) {
 			let msg = '로그인 실패';
 			if (error && typeof error === 'object' && 'status' in error) {
@@ -239,7 +247,9 @@ export class ConnectModal extends Modal {
 				msg = `로그인 실패: ${error.message}`;
 			}
 			this._loginError = msg;
-			this._render();
+		} finally {
+				this._isLoggingIn = false;
+				this._render();
 		}
 	}
 
