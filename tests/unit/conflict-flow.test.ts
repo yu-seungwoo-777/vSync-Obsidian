@@ -262,3 +262,79 @@ describe('T-008: 업로드 409 충돌 큐 적재', () => {
 		).resolves.toBeUndefined();
 	});
 });
+
+// ============================================================
+// SPEC-CONFLICT-ID-001: conflict_id 전파 테스트
+// ============================================================
+
+describe('SPEC-CONFLICT-ID-001: conflict_id 전파', () => {
+	let vault: VaultAdapter;
+	let conflictQueue: ConflictQueue;
+	let textMap: Map<string, string>;
+	let mockNotice: ReturnType<typeof vi.fn>;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		textMap = new Map();
+		vault = createVault(textMap);
+		mockNotice = vi.fn();
+		conflictQueue = new ConflictQueue();
+	});
+
+	it('ConflictResult에 conflict_id가 있으면 큐 아이템에 저장해야 한다', async () => {
+		const engine = new SyncEngine(baseSettings, vault, mockNotice, undefined, undefined, conflictQueue);
+
+		const conflictResult = {
+			conflict: true as const,
+			current_hash: 'server-hash',
+			incoming_hash: 'local-hash',
+			conflict_path: 'notes/test.md',
+			conflict_id: 'conflict-uuid-123',
+		};
+
+		await (engine as any)._handleUploadConflict('notes/test.md', 'local content', conflictResult);
+
+		expect(conflictQueue.size()).toBe(1);
+		const item = conflictQueue.peek()!;
+		expect(item.conflict_id).toBe('conflict-uuid-123');
+	});
+
+	it('ConflictResult에 conflict_id가 없으면 큐 아이템의 conflict_id가 null이어야 한다', async () => {
+		const engine = new SyncEngine(baseSettings, vault, mockNotice, undefined, undefined, conflictQueue);
+
+		const conflictResult = {
+			conflict: true as const,
+			current_hash: 'server-hash',
+			incoming_hash: 'local-hash',
+			conflict_path: 'notes/test.md',
+		};
+
+		await (engine as any)._handleUploadConflict('notes/test.md', 'local content', conflictResult);
+
+		expect(conflictQueue.size()).toBe(1);
+		const item = conflictQueue.peek()!;
+		expect(item.conflict_id).toBeNull();
+	});
+
+	it('conflict_id가 있을 때 base_hash도 함께 저장되어야 한다', async () => {
+		const engine = new SyncEngine(baseSettings, vault, mockNotice, undefined, undefined, conflictQueue);
+
+		const conflictResult = {
+			conflict: true as const,
+			current_hash: 'server-hash',
+			incoming_hash: 'local-hash',
+			conflict_path: 'notes/test.md',
+			conflict_id: 'conflict-uuid-456',
+			base_hash: 'base-hash-789',
+			diff: [{ op: -1, text: 'old' }, { op: 1, text: 'new' }],
+		};
+
+		await (engine as any)._handleUploadConflict('notes/test.md', 'local content', conflictResult);
+
+		expect(conflictQueue.size()).toBe(1);
+		const item = conflictQueue.peek()!;
+		expect(item.conflict_id).toBe('conflict-uuid-456');
+		expect(item.base_hash).toBe('base-hash-789');
+		expect(item.type).toBe('diff');
+	});
+});

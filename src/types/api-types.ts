@@ -558,6 +558,8 @@ export interface components {
             current_hash: string;
             incoming_hash: string;
             conflict_path: string;
+            /** @description 서버 충돌 레코드 ID (resolve API 호출용) */
+            conflict_id?: string;
             base_hash?: string;
             diff?: components["schemas"]["DiffOperation"][];
             can_auto_merge?: boolean;

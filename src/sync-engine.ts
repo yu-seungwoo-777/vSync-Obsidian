@@ -592,7 +592,7 @@ export class SyncEngine {
 			server_content: serverContent,
 			diff: conflictResult.diff ?? null,
 			base_hash: conflictResult.base_hash ?? null,
-			conflict_id: null, // TODO: conflict_path에서 ID 추출 (T-010)
+			conflict_id: conflictResult.conflict_id ?? null,
 			type: itemType,
 			timestamp: Date.now(),
 			source: 'upload',

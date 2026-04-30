@@ -816,6 +816,7 @@ export class VSyncClient {
 			current_hash: (data.current_hash as string) ?? '',
 			incoming_hash: (data.incoming_hash as string) ?? '',
 			conflict_path: (data.conflict_path as string) ?? '',
+			conflict_id: data.conflict_id as string | undefined,
 			base_hash: data.base_hash as string | undefined,
 			diff: data.diff as ConflictResult['diff'],
 			can_auto_merge: data.can_auto_merge as boolean | undefined,
