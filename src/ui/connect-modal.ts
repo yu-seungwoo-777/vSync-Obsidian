@@ -115,9 +115,9 @@ export class ConnectModal extends Modal {
 			.addText((text) => {
 				text
 					.setPlaceholder('password')
-					.setValue(prev.password)
 					.onChange(() => {});
 				text.inputEl.type = 'password';
+				text.inputEl.value = prev.password;
 				this._passwordInput = text.inputEl;
 			});
 
