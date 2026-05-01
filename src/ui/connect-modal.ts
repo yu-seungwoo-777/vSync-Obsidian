@@ -81,9 +81,8 @@ export class ConnectModal extends Modal {
 
 	private _render(): void {
 		const { contentEl } = this;
-		contentEl.empty();
-
 		const prev = this._readInputs();
+		contentEl.empty();
 
 		// ── 서버 URL ──
 		new Setting(contentEl)
