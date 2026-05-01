@@ -541,6 +541,8 @@ export default class VSyncPlugin extends Plugin {
 					this._isOutdated = true;
 					this._syncEngine?.destroy();
 					this._syncEngine = null;
+					this.settings.sync_enabled = false;
+					await this.saveSettings();
 					this.updateStatus('outdated');
 					new Notice(`vSync 업데이트가 필요합니다: v${info.latestVersion} (현재: v${info.currentVersion}). 동기화가 비활성화됩니다.`, 15000);
 				} else {
