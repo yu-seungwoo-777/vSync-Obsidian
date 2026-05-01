@@ -51,7 +51,7 @@ export class VSyncSettingTab extends PluginSettingTab {
 			.setDesc(isConnected ? '자동 동기화 켜기/끄기' : '서버에 먼저 연결하세요')
 			.addToggle((toggle) =>
 				toggle
-					.setValue(s.sync_enabled && isConnected)
+					.setValue(s.sync_enabled && isConnected && !this.plugin.isOutdated)
 					.onChange(async (value) => {
 						if (value && !isConnected) {
 							new Notice('서버에 연결 후 활성화할 수 있습니다');

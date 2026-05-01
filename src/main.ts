@@ -28,6 +28,7 @@ export default class VSyncPlugin extends Plugin {
 	private _workspaceAdapter: WorkspaceAdapter | null = null;
 	private _statusBarItem: { setText: (text: string) => void; setAttr: (attr: string, value: string) => void; _lastText?: string; hide?: () => void; show?: () => void } | null = null;
 	private _isOutdated = false;
+	get isOutdated(): boolean { return this._isOutdated; }
 
 	// @MX:NOTE 충돌 큐 (SPEC-P6-UX-002 REQ-UX-003)
 	conflictQueue: ConflictQueue;
