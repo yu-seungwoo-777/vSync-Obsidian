@@ -76,7 +76,7 @@ describe('classifyFiles() (T-003)', () => {
 	});
 
 	// REQ-IS-001: 순수 함수 — 부수효과 없음
-	it('should be a pure function with no side effects', () => {
+	it('should be a pure function with no side effects', async () => {
 		// 서버 파일 목록 준비
 		const serverFiles = [
 			{ path: 'server-only.md', hash: 'hash1', serverModifiedAt: 1000 },
@@ -95,7 +95,7 @@ describe('classifyFiles() (T-003)', () => {
 		vault.readIfExists.mockResolvedValue('content');
 
 		// classifyFiles 호출
-		const result = engine.classifyFiles(serverFiles, localFiles);
+		const result = await engine.classifyFiles(serverFiles, localFiles);
 
 		// 결과 검증
 		expect(result).toBeDefined();
@@ -112,7 +112,7 @@ describe('classifyFiles() (T-003)', () => {
 			{ path: 'local-only.md' },
 		];
 
-		const result = engine.classifyFiles(serverFiles, localFiles);
+		const result = await engine.classifyFiles(serverFiles, localFiles);
 
 		// 서버에만 존재 → user.downloads
 		expect(result.user.downloads).toHaveLength(1);
@@ -132,7 +132,7 @@ describe('classifyFiles() (T-003)', () => {
 			{ path: 'both.md' },
 		];
 
-		const result = engine.classifyFiles(serverFiles, localFiles);
+		const result = await engine.classifyFiles(serverFiles, localFiles);
 
 		// 양쪽에 존재 + base 없음 → user.conflicts
 		expect(result.user.conflicts).toHaveLength(1);
@@ -144,7 +144,7 @@ describe('classifyFiles() (T-003)', () => {
 	});
 
 	// REQ-IS-001: baseHash 있는 파일 → auto 그룹
-	it('should classify files with baseHash into auto group', () => {
+	it('should classify files with baseHash into auto group', async () => {
 		settings.hash_cache = {
 			'has-base.md': 'baseHash',
 		};
@@ -158,7 +158,7 @@ describe('classifyFiles() (T-003)', () => {
 			{ path: 'has-base.md' },
 		];
 
-		const result = engine.classifyFiles(serverFiles, localFiles);
+		const result = await engine.classifyFiles(serverFiles, localFiles);
 
 		// baseHash 있음 → auto 그룹
 		// 세 곳 모두 존재 → compare-hash → skips (동기화 불필요)
@@ -166,7 +166,7 @@ describe('classifyFiles() (T-003)', () => {
 	});
 
 	// REQ-IS-001: baseHash 있고 서버만 존재 → auto.deletions
-	it('should classify files with baseHash deleted on server as auto.deletions', () => {
+	it('should classify files with baseHash deleted on server as auto.deletions', async () => {
 		settings.hash_cache = {
 			'deleted-server.md': 'baseHash',
 		};
@@ -178,7 +178,7 @@ describe('classifyFiles() (T-003)', () => {
 			{ path: 'deleted-server.md' },
 		];
 
-		const result = engine.classifyFiles(serverFiles, localFiles);
+		const result = await engine.classifyFiles(serverFiles, localFiles);
 
 		// baseHash 있음 + 서버 삭제 → delete-server → auto.deletions
 		expect(result.auto.deletions).toContain('deleted-server.md');

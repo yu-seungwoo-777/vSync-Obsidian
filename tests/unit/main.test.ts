@@ -1,6 +1,7 @@
 // 플러그인 메인 테스트
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { flushLayoutReady } from '../mocks/obsidian';
 
 // SyncEngine mock - 생성자 인자 캡처
 let capturedVaultAdapter: any = null;
@@ -169,6 +170,7 @@ describe('VSyncPlugin', () => {
 			});
 
 			await plugin.onload();
+			await flushLayoutReady();
 
 			expect(mockSyncEngine.start).toHaveBeenCalled();
 			expect(mockSyncEngine.performInitialSync).toHaveBeenCalled();
@@ -182,6 +184,7 @@ describe('VSyncPlugin', () => {
 			});
 
 			await plugin.onload();
+			await flushLayoutReady();
 
 			const statusBarItem = plugin.getStatusBarItem();
 			expect(statusBarItem._lastText).toContain('Synced');
@@ -394,6 +397,7 @@ describe('VSyncPlugin', () => {
 
 			await plugin.onload();
 
+			await flushLayoutReady();
 			// SyncEngine이 생성되고 동기화가 시작되었는지 확인
 			expect(mockSyncEngine.start).toHaveBeenCalled();
 		});
@@ -406,6 +410,7 @@ describe('VSyncPlugin', () => {
 			});
 
 			await plugin.onload();
+			await flushLayoutReady();
 
 			expect(mockSyncEngine.start).toHaveBeenCalled();
 		});
@@ -435,6 +440,7 @@ describe('VSyncPlugin', () => {
 			});
 
 			await plugin.onload();
+			await flushLayoutReady();
 
 			expect(mockSyncEngine.start).toHaveBeenCalled();
 		});
@@ -476,6 +482,7 @@ describe('VSyncPlugin', () => {
 			});
 
 			await plugin.onload();
+			await flushLayoutReady();
 
 			expect(mockSyncEngine.start).toHaveBeenCalled();
 		});
@@ -506,6 +513,7 @@ describe('VSyncPlugin', () => {
 			});
 
 			await plugin.onload();
+			await flushLayoutReady();
 
 			expect(mockSyncEngine.start).toHaveBeenCalled();
 		});

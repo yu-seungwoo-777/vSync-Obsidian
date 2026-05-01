@@ -4,6 +4,19 @@
 
 import { vi } from 'vitest';
 
+// onLayoutReady async 콜백의 Promise 추적용
+let _onLayoutReadyPromise: Promise<void> | undefined;
+
+/**
+ * onLayoutReady에 등록된 async 콜백이 완료될 때까지 대기
+ * 각 테스트 beforeEach에서 _onLayoutReadyPromise 초기화 후 사용
+ */
+export async function flushLayoutReady(): Promise<void> {
+	if (_onLayoutReadyPromise) {
+		await _onLayoutReadyPromise;
+	}
+}
+
 // globalThis.crypto 모킹 (테스트 환경에서 randomUUID 사용)
 if (!globalThis.crypto?.randomUUID) {
 	Object.defineProperty(globalThis, 'crypto', {
@@ -76,6 +89,8 @@ export const moment = vi.fn().mockReturnValue({
 export class Plugin {
 	loadData = vi.fn().mockResolvedValue(null);
 	saveData = vi.fn().mockResolvedValue(undefined);
+	// onLayoutReady 콜백 Promise 초기화
+	_onLayoutReadyPromise = undefined;
 	addStatusBarItem = vi.fn().mockReturnValue({
 		setText: vi.fn().mockReturnThis(),
 		setAttr: vi.fn().mockReturnThis(),
@@ -106,8 +121,14 @@ export class Plugin {
 			getLeavesOfType: vi.fn().mockReturnValue([]),
 			activeLeaf: null,
 			// SPEC-OBSIDIAN-API-GAP-001 REQ-API-001: onLayoutReady mock
-			// 기본 동작: 콜백을 즉시 실행 (테스트에서 개별적으로 오버라이드 가능)
-			onLayoutReady: vi.fn().mockImplementation((cb: () => void) => cb()),
+			// 기본 동작: 콜백을 즉시 실행하고 반환된 Promise를 추적
+			// 테스트에서 flushLayoutReady()로 콜백 완료를 대기 가능
+			onLayoutReady: vi.fn().mockImplementation((cb: () => void | Promise<void>) => {
+				const result = cb();
+				if (result instanceof Promise) {
+					_onLayoutReadyPromise = result;
+				}
+			}),
 			// SPEC-WORKSPACE-ADAPTER-001: getRightLeaf, getLeaf mock
 			getRightLeaf: vi.fn().mockReturnValue(null),
 			getLeaf: vi.fn().mockReturnValue(null),

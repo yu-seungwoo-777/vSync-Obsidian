@@ -184,11 +184,11 @@ describe('재접속 사용자 보존 (AC-009)', () => {
 	});
 
 	// AC-009.2: Returning users see no modals (hash_cache has entries → uses performInitialSync)
-	it('should use existing sync logic for returning user', () => {
+	it('should use existing sync logic for returning user', async () => {
 		const { engine } = createEngine({ hash_cache: { 'existing.md': 'baseHash' } });
 
 		// classifyFiles with non-empty hash_cache routes to auto group
-		const result = engine.classifyFiles(
+		const result = await engine.classifyFiles(
 			[{ id: '1', path: 'existing.md', hash: 'newHash', size_bytes: null, created_at: '', updated_at: '' } as any],
 			[{ path: 'existing.md' }],
 		);
