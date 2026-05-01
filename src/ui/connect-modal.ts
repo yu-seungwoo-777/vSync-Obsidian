@@ -33,11 +33,6 @@ export class ConnectModal extends Modal {
 	private _passwordInput: HTMLInputElement | null = null;
 	private _loginBtn: HTMLButtonElement | null = null;
 
-	// 리렌더 간 값 유지용 캐시
-	private _cachedServerUrl = '';
-	private _cachedUsername = '';
-	private _cachedPassword = '';
-
 	/** 디바이스 ID */
 	private _deviceId = "";
 
@@ -53,8 +48,6 @@ export class ConnectModal extends Modal {
 		this._onConnect = onConnect;
 		this._onDisconnect = onDisconnect;
 		this._selectedVaultId = settings.vault_id;
-		this._cachedServerUrl = settings.server_url ?? '';
-		this._cachedUsername = settings.username ?? '';
 	}
 
 	onOpen(): void {
@@ -69,20 +62,18 @@ export class ConnectModal extends Modal {
 
 	/** 입력값을 DOM에서 직접 읽기 (onChange 누락 방지) */
 	private _readInputs(): { serverUrl: string; username: string; password: string } {
-		if (this._serverUrlInput) this._cachedServerUrl = this._serverUrlInput.value.replace(/\/+$/, '');
-		if (this._usernameInput) this._cachedUsername = this._usernameInput.value;
-		if (this._passwordInput) this._cachedPassword = this._passwordInput.value;
 		return {
-			serverUrl: this._cachedServerUrl,
-			username: this._cachedUsername,
-			password: this._cachedPassword,
+			serverUrl: (this._serverUrlInput?.value ?? this._settings.server_url ?? '').replace(/\/+$/, ''),
+			username: this._usernameInput?.value ?? this._settings.username ?? '',
+			password: this._passwordInput?.value ?? '',
 		};
 	}
 
 	private _render(): void {
 		const { contentEl } = this;
-		const prev = this._readInputs();
 		contentEl.empty();
+
+		const prev = this._readInputs();
 
 		// ── 서버 URL ──
 		new Setting(contentEl)
@@ -115,9 +106,9 @@ export class ConnectModal extends Modal {
 			.addText((text) => {
 				text
 					.setPlaceholder('password')
+					.setValue(prev.password)
 					.onChange(() => {});
 				text.inputEl.type = 'password';
-				text.inputEl.value = prev.password;
 				this._passwordInput = text.inputEl;
 			});
 
