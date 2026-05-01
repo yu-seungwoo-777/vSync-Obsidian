@@ -131,9 +131,9 @@ export default class VSyncPlugin extends Plugin {
 		// @MX:NOTE SPEC-OBSIDIAN-API-GAP-001 REQ-API-001: onLayoutReady 래핑
 		// vault 로드 중 기존 파일의 create 이벤트가 트리거되는 것을 방지
 		if (this._isConfigured()) {
-			this._workspaceAdapter!.onLayoutReady(() => {
-				// 버전 체크를 첫 로직으로 수행 (비동기, 완료 전까지 동기화 대기)
-				this._checkForUpdates();
+			this._workspaceAdapter!.onLayoutReady(async () => {
+				// 버전 체크 선행 (await) — 구버전이면 동기화 차단
+				await this._checkForUpdates();
 
 				if (this._isOutdated) {
 					this.updateStatus('outdated');
@@ -158,14 +158,6 @@ export default class VSyncPlugin extends Plugin {
 
 		// 명령 등록
 		this._registerCommands();
-
-			// @MX:NOTE 서버 연결 시 자동 업데이트 체크
-			if (this._isConfigured()) {
-				this._workspaceAdapter!.onLayoutReady(() => {
-					this._checkForUpdates();
-				});
-			}
-
 
 		// 설정 탭 등록 + 디바이스 API 주입 (REQ-PA-011, REQ-PA-012)
 		const settingTab = new VSyncSettingTab(this.app, this);
