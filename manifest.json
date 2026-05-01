@@ -1,7 +1,7 @@
 {
 	"id": "vsync",
 	"name": "vSync",
-	"version": "0.2.22",
+	"version": "0.2.23",
 	"minAppVersion": "1.0.0",
 	"description": "Sync with Vector server",
 	"author": "yu",
