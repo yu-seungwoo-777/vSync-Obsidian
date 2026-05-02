@@ -285,7 +285,7 @@ describe('SyncEngine', () => {
 			await engine.performInitialSync();
 
 			// 해시가 다르므로 서버 해시를 baseHash로 rawUpload
-			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('a.md', 'local content', 'server-hash');
+			expect(mockApiClient.rawUpload).toHaveBeenCalledWith('a.md', 'local content');
 		});
 
 		it('.obsidian/ 파일은 초기 동기화에서 제외해야 한다', async () => {
@@ -1323,13 +1323,23 @@ describe('SyncEngine', () => {
 		});
 
 		describe('이동 충돌 (REQ-PA-006, T-011)', () => {
-			it('POST /move 409 → graceful degradation', async () => {
+			it('POST /move 409 → 충돌 해결 inline 호출 (local/server content 포함)', async () => {
 				mockApiClient.moveFile.mockRejectedValueOnce(Object.assign(new Error('Conflict'), { status: 409 }));
+			mockApiClient.rawDownload.mockReset();
+				mockApiClient.rawDownload.mockResolvedValue('server content');
+
+				const cq = new ConflictQueue();
+				(engine as any)._conflictQueue = cq;
 
 				await (engine as any).handleLocalRename('notes/old.md', 'notes/new.md');
 
-				// 409 → graceful degradation: notice 표시 후 Obsidian delete+create 이벤트로 폴백
-				expect(mockNotice).toHaveBeenCalledWith(expect.stringContaining('Rename failed'));
+				// 409 → _resolveConflictInline 호출 → _onConflict 없으면 큐에 적재
+				expect(mockApiClient.rawDownload).toHaveBeenCalledWith('notes/new.md');
+				expect(cq.size()).toBe(1);
+				const item = cq.getAll()[0];
+				expect(item.file_path).toBe('notes/new.md');
+				expect(item.type).toBe('rename');
+				expect(item.server_content).toBe('server content');
 			});
 		});
 

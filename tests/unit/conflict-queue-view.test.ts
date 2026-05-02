@@ -29,7 +29,7 @@ describe('SimpleConflictModal (T-006)', () => {
 		);
 
 		// contentEl.createEl이 4번 호출되었는지 확인 (버튼)
-		expect(modal.contentEl.createEl).toHaveBeenCalledTimes(4);
+		expect(modal.getButtonCount()).toBe(4);
 	});
 
 	it('로컬 유지 버튼 클릭 시 local 선택 콜백을 호출해야 한다', () => {
@@ -81,6 +81,7 @@ describe('SimpleConflictModal (T-006)', () => {
 	it('getButtonCount가 4를 반환해야 한다', () => {
 		const onChoose = vi.fn();
 		const modal = new SimpleConflictModal({}, 'notes/test.md', onChoose);
+		modal.onOpen();
 		expect(modal.getButtonCount()).toBe(4);
 	});
 });

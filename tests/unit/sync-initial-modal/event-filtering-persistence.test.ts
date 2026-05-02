@@ -101,7 +101,7 @@ describe('skipped_paths 이벤트 필터링 (AC-007)', () => {
 
 		await (engine as any)._processEvent(makeEvent('normal-file.md'));
 
-		expect(downloadSpy).toHaveBeenCalledWith('normal-file.md');
+		expect(downloadSpy).toHaveBeenCalledWith('normal-file.md', undefined, { force: false });
 	});
 
 	// AC-007.4: Filter happens at event handler entry point
@@ -210,6 +210,6 @@ describe('재접속 사용자 보존 (AC-009)', () => {
 		// Normal event should be processed
 		await (engine as any)._processEvent(makeEvent('note.md'));
 
-		expect(downloadSpy).toHaveBeenCalledWith('note.md');
+		expect(downloadSpy).toHaveBeenCalledWith('note.md', undefined, { force: false });
 	});
 });

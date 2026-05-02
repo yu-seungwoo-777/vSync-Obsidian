@@ -380,11 +380,17 @@ export class SyncEngine {
 			// @MX:NOTE REQ-SYNC-005: 409 Conflict 시 conflict queue에 적재
 			const err = error as { status?: number; message?: string };
 				if (err.status === 409) {
+					const localContent = await this._vault.readIfExists(newPath) ?? '';
+					let serverContent = '';
+					try {
+						serverContent = await this._client.rawDownload(newPath);
+					} catch { /* 다운로드 실패 시 빈 내용 */ }
+
 					await this._resolveConflictInline({
 						id: globalThis.crypto?.randomUUID?.() ?? `rename-conflict-${Date.now()}`,
 						file_path: newPath,
-						local_content: '',
-						server_content: '',
+						local_content: localContent,
+						server_content: serverContent,
 						diff: null,
 						base_hash: null,
 						conflict_id: null,

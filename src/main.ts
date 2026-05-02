@@ -361,7 +361,12 @@ export default class VSyncPlugin extends Plugin {
 				this.app,
 				item.file_path,
 				(choice) => resolve(choice as 'local' | 'remote'),
-				{ hideBoth: true, hideLater: true },
+				{
+					hideBoth: true,
+					hideLater: true,
+					localContent: item.local_content,
+					serverContent: item.server_content,
+				},
 			).open();
 		});
 	}
