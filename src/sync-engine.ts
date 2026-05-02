@@ -323,16 +323,19 @@ export class SyncEngine {
 		try {
 			const choice = await this._onConflict(item);
 			if (choice === 'local') {
+				// @MX:NOTE 로컬 유지: mergeResolve로 서버 원본을 로컬 내용으로 업데이트 + 충돌 해결
 				const localHash = await computeHash(item.local_content);
-				await this._client.rawUpload(item.file_path, item.local_content);
 				if (item.conflict_id) {
-					await this.resolveConflict(item.conflict_id, 'reject');
+					await this.mergeResolve(item.conflict_id, item.local_content, localHash);
+				} else {
+					await this._client.rawUpload(item.file_path, item.local_content);
 				}
 				this._updateHashCache(item.file_path, localHash);
 			} else {
+				// @MX:NOTE 서버 유지: 서버 내용으로 로컬 덮어쓰기 + 서버 충돌 정리 (reject)
 				await this._vault.write(item.file_path, item.server_content);
 				if (item.conflict_id) {
-					await this.resolveConflict(item.conflict_id, 'accept');
+					await this.resolveConflict(item.conflict_id, 'reject');
 				}
 				const remoteHash = await computeHash(item.server_content);
 				this._updateHashCache(item.file_path, remoteHash);

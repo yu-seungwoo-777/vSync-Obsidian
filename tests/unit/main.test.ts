@@ -676,10 +676,15 @@ describe('VSyncPlugin', () => {
 		// ============================================================
 
 		describe('서버 충돌 해결 API 연동 (REQ-PA-008, T-013)', () => {
-			it('applyLocal: conflictId 있으면 resolveConflict(reject) 호출', async () => {
+			it('applyLocal: conflictId 있으면 mergeResolve 호출', async () => {
 				await plugin.onload();
-				const mockResolveConflict = vi.fn().mockResolvedValue(undefined);
-				mockSyncEngine.resolveConflict = mockResolveConflict;
+				const mockMergeResolve = vi.fn().mockResolvedValue(undefined);
+				mockSyncEngine.mergeResolve = mockMergeResolve;
+
+				// vault.readIfExists 모킹
+				const mockFile = { path: 'test.md' };
+				plugin.app.vault.getAbstractFileByPath.mockReturnValue(mockFile);
+				plugin.app.vault.read.mockResolvedValue('local content');
 
 				const itemId = 'server-local-id';
 				plugin.conflictQueue.enqueue({
@@ -697,11 +702,11 @@ describe('VSyncPlugin', () => {
 
 				await plugin.applyLocal(itemId);
 
-				expect(mockResolveConflict).toHaveBeenCalledWith('server-conflict-1', 'reject');
+				expect(mockMergeResolve).toHaveBeenCalledWith('server-conflict-1', 'local content', expect.any(String));
 				expect(plugin.conflictQueue.size()).toBe(0);
 			});
 
-			it('applyRemote: conflictId 있으면 resolveConflict(accept) 호출', async () => {
+			it('applyRemote: conflictId 있으면 resolveConflict(reject) 호출', async () => {
 				await plugin.onload();
 				const mockResolveConflict = vi.fn().mockResolvedValue(undefined);
 				mockSyncEngine.resolveConflict = mockResolveConflict;
@@ -722,7 +727,7 @@ describe('VSyncPlugin', () => {
 
 				await plugin.applyRemote(itemId);
 
-				expect(mockResolveConflict).toHaveBeenCalledWith('server-conflict-2', 'accept');
+				expect(mockResolveConflict).toHaveBeenCalledWith('server-conflict-2', 'reject');
 				expect(plugin.conflictQueue.size()).toBe(0);
 			});
 

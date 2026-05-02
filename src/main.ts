@@ -268,21 +268,19 @@ export default class VSyncPlugin extends Plugin {
 		if (this._syncEngine) {
 			try {
 				const vault = this._createVaultAdapter();
-				const content = await vault.readIfExists(item.file_path);
-				if (content !== null) {
-					(this._syncEngine as any)._uploadLocalFile(item.file_path); // eslint-disable-line @typescript-eslint/no-explicit-any -- SyncEngine private 메서드 접근
+				const localContent = await vault.readIfExists(item.file_path);
+				if (localContent !== null) {
+					const { computeHash } = await import('./utils/hash');
+					const hash = await computeHash(localContent);
+					if (item.conflict_id) {
+						// mergeResolve로 서버 원본을 로컬 내용으로 업데이트 + 충돌 해결
+						await this._syncEngine.mergeResolve(item.conflict_id, localContent, hash);
+					} else {
+						(this._syncEngine as any)._uploadLocalFile(item.file_path); // eslint-disable-line @typescript-eslint/no-explicit-any
+					}
 				}
 			} catch (e) {
 				console.warn('vSync: Failed to apply local', e);
-			}
-
-			// @MX:NOTE 서버 충돌 해결 API (REQ-PA-008)
-			if (item.conflict_id) {
-				try {
-					await this._syncEngine.resolveConflict(item.conflict_id, 'reject');
-				} catch (e) {
-					console.warn('vSync: Failed to resolve conflict on server', e);
-				}
 			}
 		}
 
@@ -306,7 +304,7 @@ export default class VSyncPlugin extends Plugin {
 		// @MX:NOTE 서버 충돌 해결 API (REQ-PA-008)
 		if (item.conflict_id && this._syncEngine) {
 			try {
-				await this._syncEngine.resolveConflict(item.conflict_id, 'accept');
+				await this._syncEngine.resolveConflict(item.conflict_id, 'reject');
 			} catch (e) {
 				console.warn('vSync: Failed to resolve conflict on server', e);
 			}
