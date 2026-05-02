@@ -328,7 +328,9 @@ export class SyncEngine {
 				if (item.conflict_id) {
 					await this.mergeResolve(item.conflict_id, item.local_content, localHash);
 				} else {
-					await this._client.rawUpload(item.file_path, item.local_content);
+					// 서버 현재 해시를 baseHash로 전달하여 재충돌(409) 방지
+					const serverHash = await computeHash(item.server_content);
+					await this._client.rawUpload(item.file_path, item.local_content, serverHash);
 				}
 				this._updateHashCache(item.file_path, localHash);
 			} else {
