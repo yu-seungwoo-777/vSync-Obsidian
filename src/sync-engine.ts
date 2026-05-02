@@ -349,7 +349,7 @@ export class SyncEngine {
 					server_content: '',
 					diff: null,
 					base_hash: null,
-					conflict_id: undefined,
+					conflict_id: null,
 					type: 'rename',
 					timestamp: Date.now(),
 					source: 'upload',
@@ -659,14 +659,14 @@ export class SyncEngine {
 	}
 
 	/** 원격 파일 다운로드 */
-	private async _downloadRemoteFile(path: string, serverHash?: string): Promise<void> {
+	private async _downloadRemoteFile(path: string, serverHash?: string, options?: { force?: boolean }): Promise<void> {
 		try {
 			if (isBinaryPath(path)) {
 				// 바이너리 파일 경로
-				await this._downloadRemoteBinary(path, serverHash);
+				await this._downloadRemoteBinary(path, serverHash, options);
 			} else {
 				// 텍스트 파일 경로 (기존 로직)
-				await this._downloadRemoteText(path, serverHash);
+				await this._downloadRemoteText(path, serverHash, options);
 			}
 		} catch (error) {
 			this._noticeFn(`Failed to download ${path}: ${(error as Error).message}`);
@@ -674,14 +674,14 @@ export class SyncEngine {
 	}
 
 	/** 텍스트 파일 원격 다운로드 */
-	private async _downloadRemoteText(path: string, serverHash?: string): Promise<void> {
+	private async _downloadRemoteText(path: string, serverHash?: string, options?: { force?: boolean }): Promise<void> {
 		const content = await this._client.rawDownload(path);
 
 		// 로컬 파일 존재 여부 확인
 		const localContent = await this._vault.readIfExists(path);
 		let resolvedHash = serverHash;
 
-		if (localContent !== null) {
+		if (localContent !== null && !options?.force) {
 			// @MX:NOTE 타겟팅된 해시 조회: serverHash 있으면 listFiles 생략
 			if (!resolvedHash) {
 				const serverFiles = await this._client.listFiles();
@@ -739,7 +739,7 @@ export class SyncEngine {
 	}
 
 	/** 바이너리 파일 원격 다운로드 */
-	private async _downloadRemoteBinary(path: string, serverHash?: string): Promise<void> {
+	private async _downloadRemoteBinary(path: string, serverHash?: string, _options?: { force?: boolean }): Promise<void> {
 		const remoteData = await this._client.downloadAttachment(path);
 
 		// 충돌 감지
@@ -1540,7 +1540,8 @@ export class SyncEngine {
 		for (const [path, resolution] of plan.conflictResolutions) {
 			try {
 				if (resolution === 'server') {
-					await this._downloadRemoteFile(path);
+					// 사용자가 이미 "server" 선택 → 충돌 감지 우회하고 강제 덮어쓰기
+					await this._downloadRemoteFile(path, undefined, { force: true });
 				} else if (resolution === 'local') {
 					// @MX:NOTE 충돌 해결에서 로컬 선택 시 서버 해시를 baseHash로 전달 (REQ-SYNC-001)
 					const serverHash = plan.conflictServerHashes?.get(path);

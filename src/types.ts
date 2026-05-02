@@ -265,7 +265,7 @@ export interface ConflictQueueItem {
 	diff: DiffOperation[] | null;
 	base_hash: string | null;
 	conflict_id: string | null;
-	type: 'diff' | 'simple';
+	type: 'diff' | 'simple' | 'rename';
 	timestamp: number;
 	source: 'download' | 'upload';
 }

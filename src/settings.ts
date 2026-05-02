@@ -11,6 +11,7 @@ export class VSyncSettingTab extends PluginSettingTab {
 		saveSettings: () => Promise<void>;
 		pauseSync: () => void;
 		resumeSync: () => void;
+		isOutdated: boolean;
 	};
 	private _connectHandler: ((settings: Partial<VSyncSettings>) => Promise<boolean>) | null = null;
 	private _disconnectHandler: (() => Promise<void>) | null = null;
