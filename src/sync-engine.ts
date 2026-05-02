@@ -647,7 +647,8 @@ export class SyncEngine {
 		switch (event.event_type) {
 			case 'created':
 			case 'updated':
-				await this._downloadRemoteFile(event.file_path);
+				// 다른 기기에서 발생한 이벤트 → 충돌 감지 없이 서버 버전으로 덮어쓰기
+				await this._downloadRemoteFile(event.file_path, undefined, { force: true });
 				break;
 			case 'deleted':
 				await this._deleteLocalFile(event.file_path);
