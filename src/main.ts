@@ -488,7 +488,6 @@ export default class VSyncPlugin extends Plugin {
 	/** 연결 설정 적용 후 동기화 시작 (모달에서 호출) */
 	async connectAndSync(newSettings: Partial<VSyncSettings>): Promise<boolean> {
 		if (this._isOutdated) {
-			new Notice('vSync 업데이트가 필요합니다. 동기화를 시작하려면 먼저 업데이트하세요.');
 			return false;
 		}
 		Object.assign(this.settings, newSettings);
