@@ -1430,10 +1430,10 @@ export class SyncEngine {
 	 * @MX:NOTE 순수 함수 — 부수효과 없음, API 호출 없음
 	 * @MX:SPEC SPEC-INITIAL-SYNC-MODAL-001
 	 */
-	classifyFiles(
+	async classifyFiles(
 		serverFiles: FileInfo[],
 		localFiles: Array<{ path: string }>,
-	): SyncClassification {
+	): Promise<SyncClassification> {
 		const classification: SyncClassification = {
 			auto: { downloads: [], uploads: [], deletions: [], skips: [] },
 			user: { downloads: [], uploads: [], conflicts: [] },
@@ -1475,8 +1475,26 @@ export class SyncEngine {
 				} else if (!inServer && inLocal) {
 					classification.user.uploads.push({ path, content: null });
 				} else if (inServer && inLocal) {
+					// baseHash 없이도 해시 비교 — 동일하면 auto skip + 캐시 등록, 다르면 conflict
 					const sf = serverFiles.find((f) => f.path === path);
-					if (sf) classification.user.conflicts.push({ path, serverHash: sf.hash, localContent: null });
+					if (sf) {
+						try {
+							const localContent = await this._vault.readIfExists(path);
+							if (localContent !== null) {
+								const localHash = await computeHash(localContent);
+								if (localHash === sf.hash) {
+									this._hashCache.set(path, sf.hash);
+									classification.auto.skips.push(path);
+								} else {
+									classification.user.conflicts.push({ path, serverHash: sf.hash, localContent: null });
+								}
+							} else {
+								classification.user.conflicts.push({ path, serverHash: sf.hash, localContent: null });
+							}
+						} catch {
+							classification.user.conflicts.push({ path, serverHash: sf.hash, localContent: null });
+						}
+					}
 				}
 			}
 		}

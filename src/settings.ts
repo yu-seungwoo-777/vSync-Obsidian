@@ -22,6 +22,7 @@ export class VSyncSettingTab extends PluginSettingTab {
 			saveSettings: () => Promise<void>;
 			pauseSync: () => void;
 			resumeSync: () => void;
+			isOutdated: boolean;
 		},
 	) {
 		super(app, plugin);

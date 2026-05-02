@@ -99,7 +99,7 @@ describe('_startSync() branching logic (AC-006)', () => {
 			expect(typeof engine.classifyFiles).toBe('function');
 
 			// 빈 캐시로 classifyFiles 호출 → auto 그룹에 아무것도 없어야 함
-			const result = engine.classifyFiles([], []);
+			const result = await engine.classifyFiles([], []);
 			expect(result.auto.downloads).toEqual([]);
 			expect(result.auto.uploads).toEqual([]);
 			expect(result.user.downloads).toEqual([]);
@@ -122,7 +122,7 @@ describe('_startSync() branching logic (AC-006)', () => {
 			const engine = new SyncEngine(settings, vault as any, vi.fn());
 
 			// hash_cache가 있으면 classifyFiles는 auto 그룹에 기존 파일 포함
-			const result = engine.classifyFiles(
+			const result = await engine.classifyFiles(
 				[{ id: '1', path: 'existing.md', hash: 'newHash', size_bytes: null, created_at: '', updated_at: '' } as any],
 				[{ path: 'existing.md' }],
 			);

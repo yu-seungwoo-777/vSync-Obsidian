@@ -399,7 +399,7 @@ export default class VSyncPlugin extends Plugin {
 			// 1. 파일 분류 (REQ-IS-001)
 			const serverFiles = await this._syncEngine.listServerFiles();
 			const localFiles = this.app.vault.getFiles();
-			const classification = this._syncEngine.classifyFiles(serverFiles, localFiles);
+			const classification = await this._syncEngine.classifyFiles(serverFiles, localFiles);
 
 			// 2. auto 그룹 자동 동기화 (REQ-IS-002)
 			await this._syncEngine.executeAutoActions(classification.auto);
