@@ -353,9 +353,17 @@ export default class VSyncPlugin extends Plugin {
 		this.conflictQueue.resolve(itemId);
 	}
 
-	/** 충돌 해결 모달 열기 */
-	private _openResolveModal(item: ConflictQueueItem): void {
-		new Notice(`충돌 해결: ${item.file_path}`);
+	/** 충돌 해결 모달 열기 — 서버/로컬 2버튼 */
+	private async _openResolveModal(item: ConflictQueueItem): Promise<'local' | 'remote'> {
+		const { SimpleConflictModal } = require('./ui/simple-conflict-modal');
+		return new Promise((resolve) => {
+			new SimpleConflictModal(
+				this.app,
+				item.file_path,
+				(choice) => resolve(choice as 'local' | 'remote'),
+				{ hideBoth: true, hideLater: true },
+			).open();
+		});
 	}
 
 	/** 벌크 원격 적용 */
@@ -376,6 +384,11 @@ export default class VSyncPlugin extends Plugin {
 
 		this._syncEngine.start((cb: () => void, ms: number) => {
 			this.registerInterval(window.setInterval(cb, ms));
+
+			// 충돌 즉시 해결 콜백 연결
+			this._syncEngine.setOnConflict(async (item) => {
+				return this._openResolveModal(item);
+			});
 		});
 
 		// 최초 연결 감지: hash_cache가 비어 있으면 모달 플로우 (REQ-IS-006)

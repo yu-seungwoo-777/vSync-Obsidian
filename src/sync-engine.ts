@@ -66,6 +66,9 @@ export class SyncEngine {
 	private _pendingUploads: Map<string, ReturnType<typeof setTimeout>> = new Map();
 	private _onCacheUpdate: ((cache: Map<string, string>) => void) | null = null;
 
+	// @MX:NOTE 즉시 모달 충돌 해결 콜백 — pause → 모달 → 해결 → resume
+	private _onConflict: ((item: ConflictQueueItem) => Promise<'local' | 'remote'>) | null = null;
+
 	private _persistCallback?: PersistCallback;
 
 	constructor(settings: VSyncSettings, vault: VaultAdapter, noticeFn: (msg: string) => void, persistCallback?: PersistCallback, restoredQueue?: OfflineQueueItem[], conflictQueue?: ConflictQueue) {
@@ -304,6 +307,41 @@ export class SyncEngine {
 		this._onCacheUpdate = callback;
 	}
 
+	/** 충돌 즉시 해결 콜백 설정 — 모달 열기 함수 전달 */
+	setOnConflict(callback: (item: ConflictQueueItem) => Promise<'local' | 'remote'>): void {
+		this._onConflict = callback;
+	}
+
+	/** 충돌 발생 시 즉시 모달로 해결 — pause → 모달 → 해결 → resume */
+	private async _resolveConflictInline(item: ConflictQueueItem): Promise<void> {
+		if (!this._onConflict) {
+			this._conflictQueue?.enqueue(item);
+			return;
+		}
+
+		this.pause();
+		try {
+			const choice = await this._onConflict(item);
+			if (choice === 'local') {
+				const localHash = await computeHash(item.local_content);
+				await this._client.rawUpload(item.file_path, item.local_content);
+				if (item.conflict_id) {
+					await this.resolveConflict(item.conflict_id, 'reject');
+				}
+				this._updateHashCache(item.file_path, localHash);
+			} else {
+				await this._vault.write(item.file_path, item.server_content);
+				if (item.conflict_id) {
+					await this.resolveConflict(item.conflict_id, 'accept');
+				}
+				const remoteHash = await computeHash(item.server_content);
+				this._updateHashCache(item.file_path, remoteHash);
+			}
+		} finally {
+			this.resume();
+		}
+	}
+
 	// ============================================================
 	// T-008: 로컬 파일 변경 감지
 	// ============================================================
@@ -341,21 +379,20 @@ export class SyncEngine {
 		} catch (error) {
 			// @MX:NOTE REQ-SYNC-005: 409 Conflict 시 conflict queue에 적재
 			const err = error as { status?: number; message?: string };
-			if (err.status === 409 && this._conflictQueue) {
-				this._conflictQueue.enqueue({
-					id: globalThis.crypto?.randomUUID?.() ?? `rename-conflict-${Date.now()}`,
-					file_path: newPath,
-					local_content: '',
-					server_content: '',
-					diff: null,
-					base_hash: null,
-					conflict_id: null,
-					type: 'rename',
-					timestamp: Date.now(),
-					source: 'upload',
-				});
-				this._noticeFn(`Rename conflict detected: ${oldPath} → ${newPath}`);
-				return;
+				if (err.status === 409) {
+					await this._resolveConflictInline({
+						id: globalThis.crypto?.randomUUID?.() ?? `rename-conflict-${Date.now()}`,
+						file_path: newPath,
+						local_content: '',
+						server_content: '',
+						diff: null,
+						base_hash: null,
+						conflict_id: null,
+						type: 'rename',
+						timestamp: Date.now(),
+						source: 'upload',
+					});
+					return;
 			}
 			this._noticeFn(`Rename failed: ${(error as Error).message}`);
 			// Graceful degradation: Obsidian에서 delete+create 이벤트도 발생하므로
@@ -572,9 +609,7 @@ export class SyncEngine {
 	 * rawUpload가 ConflictResult를 반환한 경우 큐에 적재
 	 */
 	async _handleUploadConflict(filePath: string, localContent: string, conflictResult: ConflictResult): Promise<void> {
-		if (!this._conflictQueue) return;
-
-		// 서버 내용 다운로드 (필요시)
+		// 서버 내용 다운로드
 		let serverContent = '';
 		try {
 			serverContent = await this._client.rawDownload(filePath);
@@ -585,7 +620,7 @@ export class SyncEngine {
 		const itemType: ConflictQueueItem['type'] = (conflictResult.diff && conflictResult.diff.length > 0)
 			? 'diff' : 'simple';
 
-		this._conflictQueue.enqueue({
+		const item: ConflictQueueItem = {
 			id: globalThis.crypto.randomUUID(),
 			file_path: filePath,
 			local_content: localContent,
@@ -596,7 +631,9 @@ export class SyncEngine {
 			type: itemType,
 			timestamp: Date.now(),
 			source: 'upload',
-		});
+		};
+
+		await this._resolveConflictInline(item);
 	}
 
 	/** 충돌 큐 반환 (테스트용) */
@@ -647,8 +684,8 @@ export class SyncEngine {
 		switch (event.event_type) {
 			case 'created':
 			case 'updated':
-				// 다른 기기에서 발생한 이벤트 → 충돌 감지 없이 서버 버전으로 덮어쓰기
-				await this._downloadRemoteFile(event.file_path, undefined, { force: true });
+					// 다른 기기에서 발생한 이벤트 → 충돌 감지 후 처리 (force 미사용)
+				await this._downloadRemoteFile(event.file_path, undefined, { force: false });
 				break;
 			case 'deleted':
 				await this._deleteLocalFile(event.file_path);
@@ -691,10 +728,8 @@ export class SyncEngine {
 			}
 			if (resolvedHash) {
 				const hasConflict = await this._conflictResolver.detectConflict(localContent, resolvedHash);
-				if (hasConflict) {
-					// @MX:NOTE 충돌 큐가 있으면 enqueue, 없으면 기존 동작
-					if (this._conflictQueue) {
-						this._conflictQueue.enqueue({
+					if (hasConflict) {
+						await this._resolveConflictInline({
 							id: globalThis.crypto?.randomUUID?.() ?? `conflict-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 							file_path: path,
 							local_content: localContent,
@@ -706,15 +741,10 @@ export class SyncEngine {
 							timestamp: Date.now(),
 							source: 'download',
 						});
-						return; // vault에 쓰지 않음 (AC-001.2)
+						return;
 					}
-					// 기존 동작: 충돌 파일 생성 후 원격 내용으로 덮어쓰기
-					const conflictPath = this._conflictResolver.handleConflict(path);
-					await this._vault.write(conflictPath, content);
-					return;
 				}
 			}
-		}
 
 		this._recentlyModified.add(path);
 		await this._vault.write(path, content);
@@ -784,12 +814,11 @@ export class SyncEngine {
 			return;
 		}
 
-		// 대상 경로에 이미 파일이 있으면 충돌 큐에 적재
-		const existingContent = await this._vault.readIfExists(toPath);
-		if (existingContent !== null) {
-			if (this._conflictQueue) {
+			// 대상 경로에 이미 파일이 있으면 충돌 해결
+			const existingContent = await this._vault.readIfExists(toPath);
+			if (existingContent !== null) {
 				const fromContent = await this._vault.readIfExists(fromPath);
-				this._conflictQueue.enqueue({
+				await this._resolveConflictInline({
 					id: globalThis.crypto?.randomUUID?.() ?? `conflict-${Date.now()}-${Math.random().toString(36).slice(2)}`,
 					file_path: toPath,
 					local_content: existingContent,
@@ -801,9 +830,8 @@ export class SyncEngine {
 					timestamp: Date.now(),
 					source: 'download',
 				});
+				return;
 			}
-			return;
-		}
 
 		// @MX:NOTE renameFile 사용으로 wiki link 보존
 		// 기존 경로에서 파일 읽기
@@ -953,8 +981,9 @@ export class SyncEngine {
 							} else {
 								const localHash = await computeHash(localContent);
 								if (localHash !== serverFile.hash) {
-									// 서버 해시를 baseHash로 전달하여 rawUpload
-									const result = await this._client.rawUpload(path, localContent, serverFile.hash);
+								// @MX:WARN baseHash 미전달 -- 서버가 !baseHash 경로로 충돌 감지
+								// @MX:REASON 서버 해시를 baseHash로 넘기면 baseHash === existingFile.hash가 되어 충돌 감지 우회됨
+									const result = await this._client.rawUpload(path, localContent);
 									if ('conflict' in result && result.conflict === true) {
 										await this._handleUploadConflict(path, localContent, result);
 									}
